@@ -256,6 +256,14 @@ try{ const p = JSON.parse(localStorage.getItem('pm_prefs')||'{}');
   .bankpick-item.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
   .bankpick-item .bankavatar{width:28px;height:28px;pointer-events:none;}
   .bankpick-item .bpname{font-size:8.5px;color:var(--text-2);text-align:center;line-height:1.15;pointer-events:none;}
+  .bankpick-more{border:1px dashed var(--line-strong)!important;background:transparent!important;}
+  .bankmore-ic{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--accent);background:var(--accent-soft);pointer-events:none;}
+  .bankrow{display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:8px;}
+  .bankrow:hover{background:var(--surface-2);}
+  .bankrow.selected{background:var(--accent-soft);}
+  .bankrow .brname{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .bankrow .brstar{background:none;border:none;font-size:17px;cursor:pointer;color:var(--text-3);flex-shrink:0;padding:2px 4px;line-height:1;}
+  .bankrow .brstar.on{color:#F5B301;}
 
   .methodpicker{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
   .methodpick-item{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px;border-radius:10px;cursor:pointer;border:1px solid transparent;background:var(--surface-2);}
@@ -974,7 +982,6 @@ try{ const p = JSON.parse(localStorage.getItem('pm_prefs')||'{}');
       <label>Banco</label>
       <input type="hidden" id="emBank">
       <div class="bankpicker" id="emBankPicker"></div>
-      <div class="footnote" style="margin-top:8px;">Ícones só aparecem se este arquivo for aberto direto do seu PC (não pela prévia do Claude), com a pasta <code>assets/bancos</code> ao lado dele.</div>
     </div>
     <div class="modal-actions">
       <button class="btn-ghost" id="emDelete" style="display:none;margin-right:auto;color:var(--brick);border-color:var(--brick);">Excluir</button>
@@ -1041,6 +1048,18 @@ try{ const p = JSON.parse(localStorage.getItem('pm_prefs')||'{}');
     <div class="modal-actions">
       <button class="btn-ghost" id="ofxCancel">Cancelar</button>
       <button class="btn-primary" id="ofxConfirm">Importar selecionados</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="bankChooserOverlay">
+  <div class="modal" style="max-width:460px;">
+    <h3>Escolher banco</h3>
+    <p style="font-size:12px;color:var(--text-2);margin:0 0 10px;">Toque pra selecionar. A estrela fixa o banco nos favoritos (até 11) que aparecem no atalho rápido.</p>
+    <input type="search" id="bankSearch" placeholder="Buscar banco..." style="width:100%;margin-bottom:10px;">
+    <div id="bankChooserList" style="max-height:52vh;overflow-y:auto;"></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="bankChooserClose">Fechar</button>
     </div>
   </div>
 </div>
@@ -1160,8 +1179,96 @@ const BANKS = [
   {id:'sicoob', name:'Sicoob', color:'#00A651', initials:'SI'},
   {id:'picpay', name:'PicPay', color:'#21C25E', initials:'PP'},
   {id:'mercadopago', name:'Mercado Pago', color:'#00A7DB', initials:'MP'},
+  {id:'abcbrasil', name:"ABC Brasil"},
+  {id:'ailos', name:"Ailos"},
+  {id:'almahconta', name:"Almah Conta"},
+  {id:'artta', name:"Artta"},
+  {id:'asaasipsa', name:"Asaas IP"},
+  {id:'bkbank', name:"BK Bank"},
+  {id:'bnpparipas', name:"BNP Paribas"},
+  {id:'brbbancodebrasilia', name:"BRB - Banco de Brasília"},
+  {id:'bancoarbi', name:"Banco Arbi"},
+  {id:'bancobmg', name:"Banco BMG"},
+  {id:'bancobmp', name:"Banco BMP"},
+  {id:'bancobs2sa', name:"Banco BS2"},
+  {id:'bancobtgpacutal', name:"BTG Pactual"},
+  {id:'bancodaycoval', name:"Banco Daycoval"},
+  {id:'bancoindustrialdobrasilsa', name:"Banco Industrial do Brasil"},
+  {id:'bancomercantildobrasilsa', name:"Banco Mercantil do Brasil"},
+  {id:'bancooriginalsa', name:"Banco Original"},
+  {id:'bancopan', name:"Banco Pan"},
+  {id:'bancopaulista', name:"Banco Paulista"},
+  {id:'bancopine', name:"Banco Pine"},
+  {id:'bancorendimento', name:"Banco Rendimento"},
+  {id:'bancosafrasa', name:"Banco Safra"},
+  {id:'bancosofisa', name:"Banco Sofisa"},
+  {id:'bancotopazio', name:"Banco Topázio"},
+  {id:'bancotriangulotribanco', name:"Tribanco"},
+  {id:'bancovotorantim', name:"Banco Votorantim"},
+  {id:'bancodaamazoniasa', name:"Banco da Amazônia"},
+  {id:'bancodoestadodoespiritosanto', name:"Banestes"},
+  {id:'bancodoestadodopara', name:"Banpará"},
+  {id:'bancodoestadodosergipe', name:"Banese"},
+  {id:'bancodonordestedobrasilsa', name:"Banco do Nordeste"},
+  {id:'bankofamerica', name:"Bank of America"},
+  {id:'banrisul', name:"Banrisul"},
+  {id:'beesbank', name:"Bees Bank"},
+  {id:'capitual', name:"Capitual"},
+  {id:'contasimplessolucoesempagamentos', name:"Conta Simples"},
+  {id:'contbank', name:"Contbank"},
+  {id:'corasociedadecreditodiretosa', name:"Cora"},
+  {id:'credisis', name:"Credisis"},
+  {id:'cresol', name:"Cresol"},
+  {id:'dock', name:"Dock"},
+  {id:'duepay', name:"DuePay"},
+  {id:'efigerencianet', name:"Efí (Gerencianet)"},
+  {id:'grafeno', name:"Grafeno"},
+  {id:'ifoodpago', name:"iFood Pago"},
+  {id:'infinitepay', name:"InfinitePay"},
+  {id:'ip4y', name:"Ip4y"},
+  {id:'iugo', name:"Iugo"},
+  {id:'letsbanksa', name:"Lets Bank"},
+  {id:'linker', name:"Linker"},
+  {id:'mufg', name:"MUFG"},
+  {id:'magalupay', name:"MagaluPay"},
+  {id:'modobank', name:"ModoBank"},
+  {id:'multiplobank', name:"Múltiplo Bank"},
+  {id:'neon', name:"Neon"},
+  {id:'omiecash', name:"Omie.Cash"},
+  {id:'omni', name:"Omni"},
+  {id:'orionpay', name:"OrionPay"},
+  {id:'pagsegurointernetsa', name:"PagSeguro"},
+  {id:'paycash', name:"PayCash"},
+  {id:'pinbank', name:"PinBank"},
+  {id:'qualitydigitalbank', name:"Quality Digital Bank"},
+  {id:'recargapay', name:"RecargaPay"},
+  {id:'sicredi', name:"Sicredi"},
+  {id:'sisprime', name:"Sisprime"},
+  {id:'squidsolucoesfinanceiras', name:"Squid"},
+  {id:'starbank', name:"StarBank"},
+  {id:'stonepagamentossa', name:"Stone"},
+  {id:'sulcredi', name:"Sulcredi"},
+  {id:'transfera', name:"Transfera"},
+  {id:'unicred', name:"Unicred"},
+  {id:'uniprime', name:"Uniprime"},
+  {id:'uzzipay', name:"UzziPay"},
+  {id:'xpinvestimentos', name:"XP Investimentos"},
+  {id:'zemobank', name:"Zemo Bank"},
   {id:'outro', name:'Outro', color:'#5A5A5A', initials:'--'},
 ];
+const DEFAULT_BANK_FAVORITES = ['nubank','itau','bradesco','bb','caixa','santander','inter','c6','sicoob','picpay','mercadopago'];
+const BANK_PALETTE = ['#4F8DF9','#8B5CF6','#4FB07A','#E15C56','#F59E0B','#EC4899','#00A7DB','#9C7CE0'];
+function bankInitials(b){
+  if (b.initials) return b.initials;
+  const parts = (b.name||'?').replace(/[^A-Za-zÀ-ÿ0-9 ]/g,'').trim().split(/\s+/).filter(Boolean);
+  if (parts.length>=2) return (parts[0][0]+parts[1][0]).toUpperCase();
+  return (b.name||'?').slice(0,2).toUpperCase();
+}
+function bankColor(b){
+  if (b.color) return b.color;
+  let h=0; for (const c of (b.id||'')) h=(h*31+c.charCodeAt(0))>>>0;
+  return BANK_PALETTE[h % BANK_PALETTE.length];
+}
 const METHODS = { pix:'Pix', debito:'Débito', credito:'Crédito', ted:'TED' };
 const METHOD_ICONS = {
   pix: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>',
@@ -1191,21 +1298,77 @@ function bankAvatarHtml(bankId, size){
   return `<div class="bankavatar" ${sz}>
     <img src="assets/bancos/${bank.id}.svg" alt="${bank.name}"
       onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-    <div class="fallback-initials" style="display:none;background:${bank.color}">${bank.initials}</div>
+    <div class="fallback-initials" style="display:none;background:${bankColor(bank)}">${bankInitials(bank)}</div>
   </div>`;
+}
+let __bankFavorites = DEFAULT_BANK_FAVORITES.slice();
+let __bankChooserCtx = null;   // {containerId, hiddenInputId}
+function favoriteBankIds(){
+  const favs = (__bankFavorites||[]).filter(id=> BANKS.some(b=>b.id===id));
+  return favs.length ? favs : DEFAULT_BANK_FAVORITES.slice();
 }
 function renderBankPicker(containerId, hiddenInputId, selectedId){
   const box = document.getElementById(containerId);
-  box.innerHTML = BANKS.map(b=>`
-    <div class="bankpick-item ${b.id===selectedId?'selected':''}" data-bank="${b.id}">
-      ${bankAvatarHtml(b.id)}
-      <div class="bpname">${b.name}</div>
-    </div>`).join('');
+  let ids = favoriteBankIds().slice(0, 11);
+  if (selectedId && selectedId!=='outro' && !ids.includes(selectedId)) ids = [selectedId, ...ids];
+  ids.push('outro');
+  const tiles = ids.map(id=>{ const b = bankById(id); return `
+    <div class="bankpick-item ${id===selectedId?'selected':''}" data-bank="${id}">
+      ${bankAvatarHtml(id)}
+      <div class="bpname">${esc(b.name)}</div>
+    </div>`; }).join('');
+  box.innerHTML = tiles + `
+    <div class="bankpick-item bankpick-more" data-more="1">
+      <div class="bankmore-ic">+</div><div class="bpname">Mais bancos</div>
+    </div>`;
   box.querySelectorAll('.bankpick-item').forEach(item=>{
     item.onclick = ()=>{
+      if (item.dataset.more){ openBankChooser(containerId, hiddenInputId); return; }
       box.querySelectorAll('.bankpick-item').forEach(x=>x.classList.remove('selected'));
       item.classList.add('selected');
       document.getElementById(hiddenInputId).value = item.dataset.bank;
+    };
+  });
+}
+function openBankChooser(containerId, hiddenInputId){
+  __bankChooserCtx = { containerId, hiddenInputId };
+  const cur = document.getElementById(hiddenInputId).value;
+  document.getElementById('bankSearch').value = '';
+  renderBankChooserList('', cur);
+  document.getElementById('bankChooserOverlay').classList.add('open');
+  setTimeout(()=> document.getElementById('bankSearch').focus(), 50);
+}
+function renderBankChooserList(query, selectedId){
+  const q = (query||'').toLowerCase().trim();
+  const favs = new Set(favoriteBankIds());
+  const list = BANKS.filter(b=> b.id!=='outro' && (!q || b.name.toLowerCase().includes(q)));
+  const box = document.getElementById('bankChooserList');
+  box.innerHTML = list.map(b=>`
+    <div class="bankrow ${b.id===selectedId?'selected':''}" data-bank="${b.id}">
+      ${bankAvatarHtml(b.id)}
+      <div class="brname">${esc(b.name)}</div>
+      <button class="brstar ${favs.has(b.id)?'on':''}" data-star="${b.id}" title="Favoritar">${favs.has(b.id)?'★':'☆'}</button>
+    </div>`).join('') || '<div class="empty">Nenhum banco encontrado.</div>';
+  box.querySelectorAll('.bankrow').forEach(row=>{
+    row.onclick = (ev)=>{
+      if (ev.target.closest('[data-star]')) return;
+      if (!__bankChooserCtx) return;
+      document.getElementById(__bankChooserCtx.hiddenInputId).value = row.dataset.bank;
+      renderBankPicker(__bankChooserCtx.containerId, __bankChooserCtx.hiddenInputId, row.dataset.bank);
+      document.getElementById('bankChooserOverlay').classList.remove('open');
+    };
+  });
+  box.querySelectorAll('[data-star]').forEach(btn=>{
+    btn.onclick = async (ev)=>{
+      ev.stopPropagation();
+      const id = btn.dataset.star;
+      let favs = favoriteBankIds();
+      if (favs.includes(id)) favs = favs.filter(x=>x!==id);
+      else { if (favs.length>=11){ toast('Máximo de 11 favoritos. Remova um antes.', {error:true}); return; } favs = [...favs, id]; }
+      __bankFavorites = favs;
+      await storeSet('bank_favorites', favs);
+      renderBankChooserList(document.getElementById('bankSearch').value, selectedId);
+      if (__bankChooserCtx) renderBankPicker(__bankChooserCtx.containerId, __bankChooserCtx.hiddenInputId, document.getElementById(__bankChooserCtx.hiddenInputId).value);
     };
   });
 }
@@ -2597,6 +2760,9 @@ function allCategories(){
 }
 function catLabel(key){ return allCategories()[key] || key || 'Outros'; }
 async function loadCustomCats(){ __customCats = await storeGet('custom_categories', []); }
+async function loadBankFavorites(){ const f = await storeGet('bank_favorites', null); if (Array.isArray(f) && f.length) __bankFavorites = f; }
+document.getElementById('bankChooserClose').onclick = ()=> document.getElementById('bankChooserOverlay').classList.remove('open');
+document.getElementById('bankSearch').oninput = (e)=>{ const cur = __bankChooserCtx ? document.getElementById(__bankChooserCtx.hiddenInputId).value : ''; renderBankChooserList(e.target.value, cur); };
 function fillCategorySelect(sel, selected){
   const cats = allCategories();
   sel.innerHTML = Object.entries(cats).map(([k,label])=>`<option value="${k}">${esc(label)}</option>`).join('');
@@ -3768,6 +3934,7 @@ document.addEventListener('visibilitychange', async ()=>{
       checklist = __cache.checklist_v6 || {};
       applyPrefs(__cache.user_prefs || {});
       __customCats = __cache.custom_categories || [];
+      if (Array.isArray(__cache.bank_favorites) && __cache.bank_favorites.length) __bankFavorites = __cache.bank_favorites;
       const page = document.querySelector('.sectiontab.active')?.dataset.page;
       if (page==='financeiro') renderFinance();
       if (page==='agenda'){ renderAgenda(); renderHomeCharts(); }
@@ -3780,6 +3947,7 @@ async function init(){
   document.getElementById('ifoodDate').value = dkey(new Date());
   applyPrefs(await storeGet('user_prefs', {}));
   await loadCustomCats();
+  await loadBankFavorites();
   await ensureSeeded();
   renderHomeCharts();
   renderAgenda();
