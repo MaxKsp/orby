@@ -1413,6 +1413,8 @@ document.getElementById('btnOpenExpModal').onclick = async ()=>{
   document.getElementById('emDate').value = dkey(new Date());
   document.getElementById('emTime').value = pad(new Date().getHours())+':'+pad(new Date().getMinutes());
   document.getElementById('emRecorrente').checked = false;
+  document.getElementById('emParcelas').value = '';
+  document.getElementById('emParcelasHint').textContent = '';
   fillCategorySelect(document.getElementById('emCategoria'), 'outros');
   document.getElementById('emMethod').value = 'pix';
   renderMethodPicker('emMethodPicker', 'emMethod', 'pix');
@@ -1427,14 +1429,19 @@ document.getElementById('emCancel').onclick = ()=> document.getElementById('expe
 document.getElementById('emSave').onclick = async ()=>{
   const label = document.getElementById('emLabel').value.trim();
   if (!label) return;
-  const value = Number(document.getElementById('emValue').value||0);
+  const total = Number(document.getElementById('emValue').value||0);
   const date = document.getElementById('emDate').value || null;
   const time = document.getElementById('emTime').value || '12:00';
-  const recorrencia = document.getElementById('emRecorrente').checked ? 'mensal' : 'none';
+  const pRaw = parseInt(document.getElementById('emParcelas').value, 10);
+  const parcelas = (pRaw>=2 && pRaw<=99) ? pRaw : null;
+  let recorrencia = document.getElementById('emRecorrente').checked ? 'mensal' : 'none';
+  if (parcelas) recorrencia = 'none';               // parcelado tem lógica própria
+  const value = parcelas ? Math.round((total/parcelas)*100)/100 : total;  // valor por parcela
   const categoria = document.getElementById('emCategoria').value;
   const method = document.getElementById('emMethod').value;
   const bank = document.getElementById('emBank').value;
-  const accountId = recorrencia==='none' ? (document.getElementById('emAccount').value || null) : null;
+  const recLike = recorrencia==='mensal' || parcelas;  // não movimenta conta automaticamente
+  const accountId = !recLike ? (document.getElementById('emAccount').value || null) : null;
   let lines = await getExpenseLines();
   const accounts = await getAccounts();
   let accountsTouched = false;
@@ -1448,14 +1455,14 @@ document.getElementById('emSave').onclick = async ()=>{
         if (accountId){ applyAccountMovement(accounts, accountId, value, +1); accountsTouched = true; }
       }
       l.label=label; l.value=value; l.date=date; l.time=time; l.recorrencia=recorrencia;
-      l.categoria=categoria; l.method=method; l.bank=bank; l.accountId=accountId;
+      l.categoria=categoria; l.method=method; l.bank=bank; l.accountId=accountId; l.parcelas=parcelas;
     }
   } else {
     if (accountId){
       applyAccountMovement(accounts, accountId, value, +1);
       accountsTouched = true;
     }
-    lines.push({ id: genId(), label, value, date, time, recorrencia, categoria, method, bank, accountId, createdAt: Date.now() });
+    lines.push({ id: genId(), label, value, date, time, recorrencia, categoria, method, bank, accountId, parcelas, createdAt: Date.now() });
   }
   if (accountsTouched) await storeSet('accounts_v2', accounts);
   await storeSet('expense_lines_v4', lines);
@@ -1492,7 +1499,10 @@ function openExpenseEdit(line){
   editingExpenseId = line.id;
   document.getElementById('expenseModalTitle').textContent = 'Editar despesa';
   document.getElementById('emLabel').value = line.label;
-  document.getElementById('emValue').value = line.value;
+  // parcelado: mostra o total (valor por parcela × nº) no campo de valor
+  document.getElementById('emParcelas').value = line.parcelas || '';
+  document.getElementById('emValue').value = line.parcelas ? Math.round(Number(line.value||0)*line.parcelas*100)/100 : line.value;
+  updateParcelasHint();
   document.getElementById('emDate').value = line.date || '';
   document.getElementById('emTime').value = expenseTimeOf(line);
   document.getElementById('emRecorrente').checked = line.recorrencia === 'mensal';
@@ -1506,6 +1516,19 @@ function openExpenseEdit(line){
   onExpenseMethodChange();
   document.getElementById('expenseModalOverlay').classList.add('open');
 }
+function updateParcelasHint(){
+  const p = parseInt(document.getElementById('emParcelas').value, 10);
+  const total = Number(document.getElementById('emValue').value||0);
+  const hint = document.getElementById('emParcelasHint');
+  const rec = document.getElementById('emRecorrente');
+  if (p>=2){
+    rec.checked = false; rec.disabled = true;
+    hint.textContent = total>0 ? `${p}x de ${fmtMoney(Math.round((total/p)*100)/100)} — o valor acima é o total.` : 'O valor acima é o total; será dividido nas parcelas.';
+  } else { rec.disabled = false; hint.textContent = ''; }
+}
+document.getElementById('emParcelas').addEventListener('input', updateParcelasHint);
+document.getElementById('emValue').addEventListener('input', ()=>{ if (parseInt(document.getElementById('emParcelas').value,10)>=2) updateParcelasHint(); });
+document.getElementById('emRecorrente').addEventListener('change', (e)=>{ if (e.target.checked){ document.getElementById('emParcelas').value=''; updateParcelasHint(); } });
 
 
 /* ---- Contas ---- */
@@ -1733,15 +1756,24 @@ async function detailAction(act, accId){
 /* ---- Cofrinhos ---- */
 async function getVaults(){ return await storeGet('vaults', []); }
 let editingVaultId = null, __vaultAccId = null, __moveVaultId = null, __moveMode = 'in';
-function openVaultModal(accountId, vault){
+async function openVaultModal(accountId, vault){
   __vaultAccId = accountId;
   editingVaultId = vault ? vault.id : null;
   document.getElementById('vaultModalTitle').textContent = vault ? 'Editar cofrinho' : 'Novo cofrinho';
   document.getElementById('vkName').value = vault ? vault.name : '';
   document.getElementById('vkGoal').value = vault && vault.goal ? vault.goal : '';
   document.getElementById('vkDelete').style.display = vault ? '' : 'none';
+  // criação global (sem conta fixa): mostra seletor de conta
+  const af = document.getElementById('vkAccountField');
+  if (!accountId && !vault){
+    const cs = (await getAccounts()).filter(isContaLike);
+    if (!cs.length){ toast('Cadastre uma conta primeiro.', {error:true}); return; }
+    document.getElementById('vkAccount').innerHTML = cs.map(a=>`<option value="${a.id}">${esc(a.label)}</option>`).join('');
+    af.style.display = '';
+  } else af.style.display = 'none';
   document.getElementById('vaultModalOverlay').classList.add('open');
 }
+document.getElementById('btnNewVaultGlobal').onclick = ()=> openVaultModal(null, null);
 document.getElementById('vkCancel').onclick = ()=> document.getElementById('vaultModalOverlay').classList.remove('open');
 document.getElementById('vkSave').onclick = async ()=>{
   const name = document.getElementById('vkName').value.trim();
@@ -1749,7 +1781,7 @@ document.getElementById('vkSave').onclick = async ()=>{
   const goal = Number(document.getElementById('vkGoal').value||0);
   let vaults = await getVaults();
   if (editingVaultId){ const v = vaults.find(x=>x.id===editingVaultId); if (v){ v.name=name; v.goal=goal; } }
-  else vaults.push({ id: genId(), accountId: __vaultAccId, name, goal, saved: 0, createdAt: Date.now() });
+  else { const accId = __vaultAccId || document.getElementById('vkAccount').value; vaults.push({ id: genId(), accountId: accId, name, goal, saved: 0, createdAt: Date.now() }); }
   await storeSet('vaults', vaults);
   document.getElementById('vaultModalOverlay').classList.remove('open');
   await refreshDetail(); renderFinance();
@@ -1802,6 +1834,35 @@ document.getElementById('vmSave').onclick = async ()=>{
   await refreshDetail(); renderFinance();
   toast(__moveMode==='in'?'Guardado no cofrinho':'Resgatado do cofrinho');
 };
+async function renderVaultsPage(){
+  const vaults = await getVaults();
+  const accounts = await getAccounts();
+  const box = document.getElementById('vaultsList');
+  if (!vaults.length){ box.innerHTML = emptyCta('Nenhum cofrinho ainda. Reserve uma parte do saldo pra uma meta.', '+ Novo cofrinho', 'btnNewVaultGlobal'); return; }
+  const byAcc = {};
+  vaults.forEach(v=>{ (byAcc[v.accountId] = byAcc[v.accountId] || []).push(v); });
+  box.innerHTML = Object.keys(byAcc).map(accId=>{
+    const acc = accounts.find(a=>a.id===accId);
+    const accName = acc ? acc.label : 'Conta removida';
+    const total = byAcc[accId].reduce((s,v)=>s+Number(v.saved||0),0);
+    return `<div class="ad-sec" style="display:flex;align-items:center;">${esc(accName)}<span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;color:var(--sage);">${fmtMoney(total)}</span></div>` +
+      byAcc[accId].map(v=>{
+        const goal = Number(v.goal||0);
+        const pct = goal>0 ? Math.min(100, Math.round(Number(v.saved||0)/goal*100)) : 0;
+        return `<div class="vaultcard">
+          <div class="vaulttop"><div class="vaultname" data-vedit="${v.id}">${esc(v.name)}</div>
+            <div class="vaultval">${fmtMoney(v.saved)}${goal>0?' <span style="color:var(--text-3)">/ '+fmtMoney(goal)+'</span>':''}</div></div>
+          ${goal>0?`<div class="vaultbar"><div style="width:${pct}%"></div></div>`:''}
+          <div class="vaultacts">
+            <button class="btn-ghost vk-a" data-vin="${v.id}" style="padding:4px 10px;font-size:11px;">Guardar</button>
+            <button class="btn-ghost vk-a" data-vout="${v.id}" style="padding:4px 10px;font-size:11px;">Resgatar</button>
+          </div></div>`;
+      }).join('');
+  }).join('');
+  box.querySelectorAll('[data-vedit]').forEach(el=> el.onclick = ()=>{ const v = vaults.find(x=>x.id===el.dataset.vedit); if (v) openVaultModal(v.accountId, v); });
+  box.querySelectorAll('[data-vin]').forEach(el=> el.onclick = ()=>{ const v = vaults.find(x=>x.id===el.dataset.vin); if (v) openVaultMove(v, 'in'); });
+  box.querySelectorAll('[data-vout]').forEach(el=> el.onclick = ()=>{ const v = vaults.find(x=>x.id===el.dataset.vout); if (v) openVaultMove(v, 'out'); });
+}
 
 /* ---- Transferência entre contas ---- */
 async function getTransfers(){ return await storeGet('transfers', []); }
@@ -2062,6 +2123,17 @@ function clampDayOfMonth(year, month, day){
 function expenseOccurrencesInRange(exp, range){
   if (!exp.date) return [];
   const anchor = new Date(exp.date+'T00:00:00');
+  // parcelado: N ocorrências mensais a partir da 1ª parcela
+  if (exp.parcelas >= 2){
+    const dom = anchor.getDate();
+    const occ = [];
+    for (let i=0;i<exp.parcelas;i++){
+      const m = new Date(anchor.getFullYear(), anchor.getMonth()+i, 1);
+      const od = new Date(m.getFullYear(), m.getMonth(), clampDayOfMonth(m.getFullYear(), m.getMonth(), dom));
+      if (dnum(od) >= dnum(range.start) && dnum(od) <= dnum(range.end)) occ.push(od);
+    }
+    return occ;
+  }
   if (exp.recorrencia !== 'mensal'){
     return inRange(exp.date, range) ? [anchor] : [];
   }
@@ -2083,6 +2155,14 @@ function expenseOccurrencesInRange(exp, range){
 }
 function expenseTotalInRange(exp, range){
   return expenseOccurrencesInRange(exp, range).length * Number(exp.value||0);
+}
+/** "parcela X/N": qual parcela cai no mês de 'now' (clampado 1..N). */
+function parcelaLabel(exp, now){
+  if (!exp.parcelas || !exp.date) return '';
+  const a = new Date(exp.date+'T00:00:00');
+  let n = (now.getFullYear()-a.getFullYear())*12 + (now.getMonth()-a.getMonth()) + 1;
+  n = Math.max(1, Math.min(exp.parcelas, n));
+  return 'parcela ' + n + '/' + exp.parcelas;
 }
 function expenseTimeOf(exp){
   if (exp.time) return exp.time;
@@ -2206,7 +2286,8 @@ function goalRowNew(){
     </span>
   </div>`;
 }
-document.getElementById('btnEditGoals').onclick = async ()=>{
+const __btnEditGoals = document.getElementById('btnEditGoals');
+if (__btnEditGoals) __btnEditGoals.onclick = async ()=>{
   const goals = await storeGet('budget_goals', {});
   const customKeys = new Set(__customCats.map(c=>c.key));
   const box = document.getElementById('goalsInputs');
@@ -2444,8 +2525,8 @@ async function renderFinance(){
     }
   }
 
-  if (activePage === 'fpage-metas'){
-    await renderGoals(expLines, now);
+  if (activePage === 'fpage-cofrinhos'){
+    await renderVaultsPage();
   }
 
   if (activePage === 'fpage-extrato'){
@@ -2461,7 +2542,7 @@ async function renderExtrato(expLines, incLines, entries, accounts, now){
   const items = [];
   expLines.forEach(e=>{
     items.push({ side:'out', sortKey: e.date||'0000-00-00', label: e.label, value: Number(e.value||0),
-      sub: [relDate(e.date), catLabel(e.categoria), e.recorrencia==='mensal'?'mensal':'', bankById(e.bank).name].filter(Boolean).join(' · '),
+      sub: [relDate(e.date), catLabel(e.categoria), e.recorrencia==='mensal'?'mensal':'', e.parcelas>=2?parcelaLabel(e,now):'', bankById(e.bank).name].filter(Boolean).join(' · '),
       icon: bankAvatarHtml(e.bank), onClick: ()=>openExpenseEdit(e),
       search: (e.label+' '+catLabel(e.categoria)+' '+bankById(e.bank).name+' '+(METHODS[e.method]||'')).toLowerCase() });
   });
