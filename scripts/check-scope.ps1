@@ -3,7 +3,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Phase,
 
-    [string[]]$ChangedFiles
+    [string[]]$ChangedFiles,
+
+    [string[]]$ExcludedFiles = @()
 )
 
 Set-StrictMode -Version Latest
@@ -133,6 +135,9 @@ if ($ChangedFiles -and $ChangedFiles.Count -gt 0) {
 } else {
     $files = @(Get-ChangedFilesFromGit)
 }
+
+$normalizedExcludedFiles = @($ExcludedFiles | ForEach-Object { $_.Replace('\', '/').TrimStart('.', '/') })
+$files = @($files | Where-Object { $normalizedExcludedFiles -notcontains $_ })
 
 $outsideAllowlist = @()
 $forbiddenTouched = @()

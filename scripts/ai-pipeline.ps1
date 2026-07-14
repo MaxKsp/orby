@@ -1,7 +1,18 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
     [string]$Phase,
+
+    [switch]$AutoNextPhase,
+
+    [int]$MaxPhases = 1,
+
+    [Nullable[int]]$StartPhaseNumber,
+
+    [switch]$StopAfterPlan,
+
+    [switch]$StopAfterCommit,
+
+    [switch]$CommitPhaseDefinition,
 
     [switch]$AutoCommit,
 
@@ -29,7 +40,13 @@ param(
 
     [int]$HeartbeatSeconds = 10,
 
-    [switch]$VerboseLogs
+    [switch]$VerboseLogs,
+
+    [Parameter(DontShow = $true)]
+    [string]$GeneratedPhaseDefinition,
+
+    [Parameter(DontShow = $true)]
+    [switch]$CommitGeneratedPhaseDefinition
 )
 
 Set-StrictMode -Version Latest
@@ -222,7 +239,8 @@ function Find-LatestPlanPath {
 function Assert-CleanPreconditions {
     param(
         [string]$RepoRoot,
-        [string]$ResolvedPhasePath
+        [string]$ResolvedPhasePath,
+        [string]$AllowedDirtyPath
     )
 
     $gitRoot = (& git rev-parse --show-toplevel).Trim()
@@ -239,9 +257,13 @@ function Assert-CleanPreconditions {
         throw "Refusing to run on protected branch: $branch"
     }
 
-    $status = @(& git status --porcelain)
-    if ($status.Count -gt 0) {
-        throw 'Working tree must be clean before starting a phase.'
+    $dirtyFiles = @(Get-ChangedFiles)
+    if ($AllowedDirtyPath) {
+        $normalizedAllowedDirtyPath = $AllowedDirtyPath.Replace('\', '/').TrimStart('.', '/')
+        $dirtyFiles = @($dirtyFiles | Where-Object { $_ -ne $normalizedAllowedDirtyPath })
+    }
+    if ($dirtyFiles.Count -gt 0) {
+        throw "Working tree must be clean before starting a phase. Unexpected: $($dirtyFiles -join ', ')"
     }
 
     foreach ($toolName in @('git', 'node')) {
@@ -282,6 +304,8 @@ function New-RunDirectory {
 }
 
 function Get-ChangedFiles {
+    param([string[]]$ExcludePaths = @())
+
     $trackedWorkingTree = @(& git -c core.quotepath=false diff --name-only --diff-filter=ACDMRTUXB --)
     if ($LASTEXITCODE -ne 0) {
         throw 'Failed to list tracked working-tree changes.'
@@ -313,7 +337,143 @@ function Get-ChangedFiles {
         }
     }
 
-    return $normalizedFiles | Sort-Object -Unique
+    $normalizedExclusions = @($ExcludePaths | ForEach-Object { $_.Replace('\', '/').TrimStart('.', '/') })
+    return $normalizedFiles | Where-Object { $normalizedExclusions -notcontains $_ } | Sort-Object -Unique
+}
+
+function Assert-AutoNextPreconditions {
+    param([string]$RepoRoot)
+
+    $branch = (& git branch --show-current).Trim()
+    if (-not $branch) {
+        throw 'Unable to determine current branch.'
+    }
+    if ($branch -in @('main', 'master')) {
+        throw "Refusing to run on protected branch: $branch"
+    }
+
+    $dirtyFiles = @(Get-ChangedFiles)
+    if ($dirtyFiles.Count -gt 0) {
+        throw "Working tree must be clean before AutoNextPhase. Dirty: $($dirtyFiles -join ', ')"
+    }
+
+    $null = Resolve-AgentCommandPath -Name 'codex'
+    $null = Resolve-AgentCommandPath -Name 'claude'
+    return $branch
+}
+
+function Get-NextPhaseNumber {
+    param(
+        [string]$RepoRoot,
+        [Nullable[int]]$RequestedNumber
+    )
+
+    if ($null -ne $RequestedNumber -and $RequestedNumber.Value -gt 0) {
+        return $RequestedNumber.Value
+    }
+
+    $numbers = @()
+    Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'automation/phases') -Filter 'phase-*.json' -File | ForEach-Object {
+        if ($_.BaseName -match '^phase-(\d+)$') {
+            $numbers += [int]$matches[1]
+        }
+    }
+    @(& git log -50 --pretty=format:%s) | ForEach-Object {
+        if ($_ -match '(?i)phase[- ](\d+)') {
+            $numbers += [int]$matches[1]
+        }
+    }
+
+    if ($numbers.Count -eq 0) {
+        return 1
+    }
+    return ([int](($numbers | Measure-Object -Maximum).Maximum) + 1)
+}
+
+function Invoke-CodexNextPhase {
+    param(
+        [string]$RepoRoot,
+        [string]$RunDirectory,
+        [int]$PhaseNumber,
+        [string]$SchemaPath,
+        [int]$MaxAllowedFiles = 8
+    )
+
+    $expectedId = "phase-$PhaseNumber"
+    $prompt = Get-Content -LiteralPath (Join-Path $RepoRoot 'automation/prompts/next-phase.md') -Raw
+    $prompt = $prompt.Replace('{{EXPECTED_PHASE_ID}}', $expectedId)
+    $prompt = $prompt.Replace('{{MAX_ALLOWED_FILES}}', $MaxAllowedFiles.ToString())
+    $recentLog = @(& git log -15 --pretty=format:'%h %s') -join [Environment]::NewLine
+    $prompt += "`n`nRecent git history:`n$recentLog"
+
+    $promptPath = Join-Path $RunDirectory 'next-phase-prompt.txt'
+    $decisionPath = Join-Path $RunDirectory 'next-phase.json'
+    $prompt | Out-File -LiteralPath $promptPath -Encoding utf8
+
+    $codexArgs = @('exec')
+    if (-not $UseCodexUserConfig) {
+        $codexArgs += '--ignore-user-config'
+        $codexArgs += '--ephemeral'
+    }
+    $codexArgs += @(
+        '--sandbox', 'read-only',
+        '--cd', $RepoRoot,
+        '--output-last-message', $decisionPath,
+        '--output-schema', $SchemaPath,
+        '-'
+    )
+
+    $codexCmd = Resolve-AgentCommandPath -Name 'codex'
+    $null = Invoke-NativeProcess `
+        -StageName 'NextPhase' `
+        -FilePath $codexCmd `
+        -ArgumentList $codexArgs `
+        -RunDirectory $RunDirectory `
+        -TimeoutSeconds $ArchitectTimeoutSeconds `
+        -HeartbeatIntervalSeconds $HeartbeatSeconds `
+        -StandardInputText $prompt
+
+    if (-not (Test-Path -LiteralPath $decisionPath)) {
+        throw "Codex did not create next-phase decision: $decisionPath"
+    }
+
+    $validatorArgs = @(
+        '-NoProfile',
+        '-NonInteractive',
+        '-File', (Join-Path $RepoRoot 'scripts/validate-next-phase.ps1'),
+        '-DecisionPath', $decisionPath,
+        '-ExpectedPhaseNumber', $PhaseNumber,
+        '-MaxAllowedFiles', $MaxAllowedFiles
+    )
+    $validatorResult = Invoke-NativeProcess `
+        -StageName 'NextPhaseValidation' `
+        -FilePath $powerShellExe `
+        -ArgumentList $validatorArgs `
+        -RunDirectory $RunDirectory `
+        -TimeoutSeconds $PostProcessTimeoutSeconds `
+        -HeartbeatIntervalSeconds $HeartbeatSeconds
+    $validatorResult.stdout | Out-File -LiteralPath (Join-Path $RunDirectory 'next-phase-validation.json') -Encoding utf8
+
+    return Get-Content -LiteralPath $decisionPath -Raw | ConvertFrom-Json
+}
+
+function Write-AutoNextSummary {
+    param(
+        [string]$Path,
+        [int]$PhaseNumber,
+        [bool]$Completed,
+        [string]$Reason,
+        [string]$PhasePath
+    )
+
+    @(
+        '# Auto Next Phase Summary',
+        '',
+        "- Expected phase: phase-$PhaseNumber",
+        "- Completed: $Completed",
+        "- Reason: $Reason",
+        "- Phase file: $PhasePath"
+    ) -join [Environment]::NewLine | Out-File -LiteralPath $Path -Encoding utf8
 }
 
 function Invoke-NativeProcess {
@@ -667,6 +827,12 @@ function Invoke-ClaudeImplementation {
     $promptPath = Join-Path $RunDirectory 'implementer-prompt.txt'
     $prompt | Out-File -LiteralPath $promptPath -Encoding utf8
 
+    $generatedPhaseHash = ''
+    if ($GeneratedPhaseDefinition) {
+        $generatedPhasePath = Join-Path $RepoRoot $GeneratedPhaseDefinition
+        $generatedPhaseHash = (Get-FileHash -LiteralPath $generatedPhasePath -Algorithm SHA256).Hash
+    }
+
     $claudeCmd = Resolve-AgentCommandPath -Name 'claude'
     $claudeTools = 'Read,Glob,Grep,Edit,Write'
     $claudeArgs = @(
@@ -693,7 +859,14 @@ function Invoke-ClaudeImplementation {
 
     (Get-LogTextOrEmpty -Text $result.stdout) | Out-File -LiteralPath (Join-Path $RunDirectory 'implementer.txt') -Encoding utf8
 
-    $changedFiles = @(Get-ChangedFiles)
+    if ($GeneratedPhaseDefinition) {
+        $currentGeneratedPhaseHash = (Get-FileHash -LiteralPath $generatedPhasePath -Algorithm SHA256).Hash
+        if ($currentGeneratedPhaseHash -ne $generatedPhaseHash) {
+            throw "Claude modified the generated phase definition: $GeneratedPhaseDefinition"
+        }
+    }
+
+    $changedFiles = @(Get-ChangedFiles -ExcludePaths @($GeneratedPhaseDefinition))
     if ($changedFiles.Count -eq 0) {
         throw 'Claude completed without modifying the workspace.'
     }
@@ -739,6 +912,9 @@ function Invoke-CodexReview {
     )
 
     $prompt = Get-PromptText -TemplatePath (Join-Path $RepoRoot 'automation/prompts/reviewer.md') -PhaseJson $PhaseJson -PlanJson $PlanJson
+    if ($GeneratedPhaseDefinition) {
+        $prompt += "`n`nThe generated orchestration file $GeneratedPhaseDefinition is not implementation scope. Ignore that file and review only the phase allowlist diff."
+    }
     $promptPath = Join-Path $RunDirectory 'reviewer-prompt.txt'
     $reviewOutputPath = Join-Path $RunDirectory 'review.json'
     $prompt | Out-File -LiteralPath $promptPath -Encoding utf8
@@ -872,8 +1048,98 @@ $repoRoot = Resolve-RepoRoot
 $powerShellExe = Get-PowerShellExecutable
 Set-Location -LiteralPath $repoRoot
 
+if ($AutoNextPhase) {
+    if ($Phase) {
+        throw 'Use either -AutoNextPhase or -Phase, not both.'
+    }
+    if ($MaxPhases -lt 1) {
+        throw 'MaxPhases must be at least 1.'
+    }
+
+    $branch = Assert-AutoNextPreconditions -RepoRoot $repoRoot
+    $nextPhaseNumber = Get-NextPhaseNumber -RepoRoot $repoRoot -RequestedNumber $StartPhaseNumber
+    $nextPhaseSchemaPath = Join-Path $repoRoot 'automation/schemas/next-phase.schema.json'
+
+    for ($phaseIndex = 0; $phaseIndex -lt $MaxPhases; $phaseIndex++) {
+        $runDirectory = New-RunDirectory -RepoRoot $repoRoot
+        $decision = Invoke-CodexNextPhase `
+            -RepoRoot $repoRoot `
+            -RunDirectory $runDirectory `
+            -PhaseNumber $nextPhaseNumber `
+            -SchemaPath $nextPhaseSchemaPath
+
+        if ($decision.completed) {
+            Write-AutoNextSummary `
+                -Path (Join-Path $runDirectory 'summary.md') `
+                -PhaseNumber $nextPhaseNumber `
+                -Completed $true `
+                -Reason $decision.reason `
+                -PhasePath ''
+            Write-Host "AutoNextPhase completed: $($decision.reason)"
+            return
+        }
+
+        $phaseRelativePath = "automation/phases/phase-$nextPhaseNumber.json"
+        $phasePath = Join-Path $repoRoot $phaseRelativePath
+        if (Test-Path -LiteralPath $phasePath) {
+            throw "Generated phase path already exists: $phaseRelativePath"
+        }
+        $decision.phase | ConvertTo-Json -Depth 8 | Out-File -LiteralPath $phasePath -Encoding utf8
+        Write-AutoNextSummary `
+            -Path (Join-Path $runDirectory 'summary.md') `
+            -PhaseNumber $nextPhaseNumber `
+            -Completed $false `
+            -Reason $decision.reason `
+            -PhasePath $phaseRelativePath
+
+        $generatedPhaseArgument = $phaseRelativePath
+
+        $childArgs = @(
+            '-NoProfile',
+            '-File', $PSCommandPath,
+            '-Phase', $phaseRelativePath,
+            '-MaxFixAttempts', $MaxFixAttempts,
+            '-ArchitectTimeoutSeconds', $ArchitectTimeoutSeconds,
+            '-ImplementerTimeoutSeconds', $ImplementerTimeoutSeconds,
+            '-ClaudePermissionMode', $ClaudePermissionMode,
+            '-PostProcessTimeoutSeconds', $PostProcessTimeoutSeconds,
+            '-ValidationTimeoutSeconds', $ValidationTimeoutSeconds,
+            '-ReviewerTimeoutSeconds', $ReviewerTimeoutSeconds,
+            '-HeartbeatSeconds', $HeartbeatSeconds
+        )
+        if ($generatedPhaseArgument) { $childArgs += @('-GeneratedPhaseDefinition', $generatedPhaseArgument) }
+        if ($CommitPhaseDefinition) { $childArgs += '-CommitGeneratedPhaseDefinition' }
+        if ($AutoCommit) { $childArgs += '-AutoCommit' }
+        if ($Push) { $childArgs += '-Push' }
+        if ($UseCodexUserConfig) { $childArgs += '-UseCodexUserConfig' }
+        if ($VerboseLogs) { $childArgs += '-VerboseLogs' }
+        if ($DryRun -or $StopAfterPlan) { $childArgs += '-DryRun' }
+
+        & $powerShellExe @childArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "Phase $nextPhaseNumber pipeline failed."
+        }
+
+        if ($DryRun -or $StopAfterPlan) {
+            return
+        }
+        if ($StopAfterCommit) {
+            return
+        }
+
+        $nextPhaseNumber = Get-NextPhaseNumber -RepoRoot $repoRoot -RequestedNumber $null
+    }
+
+    Write-Host "AutoNextPhase reached MaxPhases=$MaxPhases."
+    return
+}
+
+if (-not $Phase) {
+    throw 'Specify -Phase or -AutoNextPhase.'
+}
+
 $resolvedPhasePath = Join-Path $repoRoot $Phase
-$branch = Assert-CleanPreconditions -RepoRoot $repoRoot -ResolvedPhasePath $resolvedPhasePath
+$branch = Assert-CleanPreconditions -RepoRoot $repoRoot -ResolvedPhasePath $resolvedPhasePath -AllowedDirtyPath $GeneratedPhaseDefinition
 $runDirectory = New-RunDirectory -RepoRoot $repoRoot
 if ($ClaudePermissionMode -eq 'bypassPermissions') {
     throw 'ClaudePermissionMode bypassPermissions is prohibited.'
@@ -930,6 +1196,18 @@ try {
         throw 'Plan not approved.'
     }
 
+    if ($CommitGeneratedPhaseDefinition -and -not $DryRun) {
+        & git add -- $GeneratedPhaseDefinition
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to stage generated phase definition.'
+        }
+        $generatedPhaseId = [System.IO.Path]::GetFileNameWithoutExtension($GeneratedPhaseDefinition)
+        & git commit -m "chore(automation): define $generatedPhaseId"
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to commit generated phase definition after Architect approval.'
+        }
+    }
+
     if ($DryRun) {
         Write-Host 'DryRun completed after planning. No implementation, validation, review, commit, or push performed.'
         return
@@ -943,6 +1221,10 @@ try {
         '-Phase', $Phase,
         '-RunDirectory', $runDirectory
     )
+    if ($GeneratedPhaseDefinition) {
+        $validationArgs += '-ExcludedFiles'
+        $validationArgs += $GeneratedPhaseDefinition
+    }
     if ($VerboseLogs) {
         $validationArgs += '-VerboseLogs'
     }
@@ -985,7 +1267,7 @@ try {
         throw 'Review rejected.'
     }
 
-    $changedFiles = Get-ChangedFiles
+    $changedFiles = @(Get-ChangedFiles -ExcludePaths @($GeneratedPhaseDefinition))
     if ($changedFiles.Count -eq 0) {
         $failures.Add('Implementation produced no changes.')
         throw 'No changes detected.'
@@ -995,6 +1277,13 @@ try {
         & git add -- $file
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to stage file: $file"
+        }
+    }
+
+    if ($GeneratedPhaseDefinition) {
+        & git add -- $GeneratedPhaseDefinition
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to stage generated phase definition: $GeneratedPhaseDefinition"
         }
     }
 

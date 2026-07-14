@@ -7,6 +7,8 @@ param(
 
     [switch]$SkipScope,
 
+    [string[]]$ExcludedFiles = @(),
+
     [switch]$VerboseLogs
 )
 
@@ -162,7 +164,12 @@ Assert-PhaseDefinition -Definition $phaseObject
 $results = New-Object System.Collections.Generic.List[object]
 
 if (-not $SkipScope) {
-    $scopeJson = & $powerShellExe -NoProfile -File (Join-Path $repoRoot 'scripts/check-scope.ps1') -Phase $Phase
+    $scopeArgs = @('-NoProfile', '-File', (Join-Path $repoRoot 'scripts/check-scope.ps1'), '-Phase', $Phase)
+    if ($ExcludedFiles.Count -gt 0) {
+        $scopeArgs += '-ExcludedFiles'
+        $scopeArgs += $ExcludedFiles
+    }
+    $scopeJson = & $powerShellExe @scopeArgs
     $scopeExitCode = $LASTEXITCODE
 
     if ($RunDirectory) {

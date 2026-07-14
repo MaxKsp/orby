@@ -35,9 +35,37 @@ Run the pipeline from the Git root:
 .\scripts\ai-pipeline.ps1 -Phase automation\phases\phase-13.json
 ```
 
+Generate and run the next safe phase automatically:
+
+```powershell
+.\scripts\ai-pipeline.ps1 -AutoNextPhase
+```
+
+The default `-MaxPhases 1` limits the automatic cycle to one phase. Use
+`-StartPhaseNumber` to override discovery, `-StopAfterPlan` to stop after the
+generated phase passes Architect, or `-StopAfterCommit` to stop after its
+implementation commit. `-CommitPhaseDefinition` creates a separate definition
+commit; otherwise the generated definition is included in the confirmed
+implementation commit.
+
+Safe planning-only mode:
+
+```powershell
+.\scripts\ai-pipeline.ps1 -AutoNextPhase -DryRun
+```
+
+This generates and validates `automation/phases/phase-N.json`, runs Architect,
+and stops without calling Claude or changing application files.
+
 Optional flags:
 
 - `-AutoCommit`
+- `-AutoNextPhase`
+- `-MaxPhases 1`
+- `-StartPhaseNumber 15`
+- `-StopAfterPlan`
+- `-StopAfterCommit`
+- `-CommitPhaseDefinition`
 - `-Push`
 - `-DryRun`
 - `-SkipArchitect`
@@ -83,7 +111,8 @@ its content is exactly `OK`, and removes it in a `finally` block.
 
 Current `-DryRun` behavior:
 
-- runs preflight and Codex planning only
+- in `-Phase` mode, runs preflight and Codex planning only
+- in `-AutoNextPhase` mode, generates and validates the next phase first
 - writes run artifacts for the planning step
 - does not call Claude
 - does not run validation, review, commit, or push
@@ -139,8 +168,33 @@ On timeout or failure, the pipeline records:
   current working tree.
 
 - `scripts/check-scope.ps1`
-  Checks changed files from `git status --porcelain` against the phase
-  allowlist and denylist.
+  Checks exact tracked, staged, and individual untracked files against the
+  phase allowlist and denylist.
+
+- `scripts/validate-next-phase.ps1`
+  Applies deterministic safety rules to a Codex next-phase decision, including
+  explicit-file allowlists, maximum scope, sensitive-path denial, overlap
+  checks, new-test coverage, and canonical frontend source enforcement.
+
+## Automatic Next-Phase Safety
+
+Automatic mode starts only on a clean non-`main`/non-`master` branch. Codex
+reads architecture/development docs, current Finance seams, tests, existing
+phase files, and recent Git history. Its structured decision is saved as
+`automation/runs/<timestamp>/next-phase.json` and validated against
+`automation/schemas/next-phase.schema.json` plus deterministic PowerShell
+guards before a phase file is created.
+
+The generator rejects wildcard or directory-root allowlists, `scripts/`,
+`automation/`, sensitive files, schema/migration paths, excessive file counts,
+allow/deny overlap, and phases without a new runnable test unless the
+description starts with `[test-justification]`. Public JavaScript copies under
+`assets/` require a canonical source under
+`app/Modules/Finance/Frontend/` and a byte-for-byte validation command.
+
+`completed=true` creates no phase file, writes the decision and `summary.md`,
+and exits successfully. Any failed test, lint, scope check, Architect decision,
+Reviewer blocker, or `MaxPhases` limit stops the cycle.
 
 ## Required CLIs
 
