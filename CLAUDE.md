@@ -162,8 +162,10 @@ Antes de mexer em deploy:
 
 ## Commits e branches
 
-- Branch por melhoria: `feature/nome-curto`.
-- Commits: `feat:`, `fix:`, `sec:`, `chore:`, `docs:`.
+- Workflow permanente: ver `docs/development/`.
+- Branches curtas por assunto: `feature/`, `fix/`, `refactor/`, `docs/`
+  e `review/`.
+- Commits: `feat:`, `fix:`, `refactor:`, `test:`, `sec:`, `chore:`, `docs:`.
 - Priorizar itens de `ROADMAP.md`.
 
 ## Resposta final esperada
