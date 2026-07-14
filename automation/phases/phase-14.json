@@ -1,0 +1,46 @@
+{
+  "id": "phase-14",
+  "title": "Extract Finance anomaly detection",
+  "description": "Extract only the pure detectAnomalies calculation from assets/app.js into a dedicated client-side script, preserving thresholds, sorting, expense shapes, rendering, dismissal state, public endpoints, and all current Finance behavior.",
+  "allowedFiles": [
+    "assets/app.js",
+    "assets/finance-anomaly-detection.js",
+    "index.php",
+    "tests/js/finance_anomaly_detection_test.js",
+    "docs/architecture/finance/PHASE_14_ANOMALY_DETECTION_REPORT.md"
+  ],
+  "forbiddenFiles": [
+    "api/",
+    "app/Modules/Finance/",
+    "finance.php",
+    "ofx.php",
+    "db.php",
+    "schema.sql",
+    "migrations/",
+    "assets/finance-account-movement.js",
+    "assets/pay-fatura-account.js",
+    "assets/account-transfer.js",
+    "assets/ofx-import-confirmation.js",
+    "automation/",
+    "scripts/"
+  ],
+  "phpTests": [
+    "C:\\Users\\Max\\tools\\php\\php.exe tests\\run.php"
+  ],
+  "jsTests": [
+    "node tests/js/finance_account_movement_test.js",
+    "node tests/js/pay_fatura_account_test.js",
+    "node tests/js/account_transfer_test.js",
+    "node tests/js/ofx_import_confirmation_test.js",
+    "node tests/js/finance_anomaly_detection_test.js"
+  ],
+  "phpLint": [
+    "C:\\Users\\Max\\tools\\php\\php.exe -l index.php"
+  ],
+  "jsLint": [
+    "node --check assets/app.js",
+    "node --check assets/finance-anomaly-detection.js",
+    "node --check tests/js/finance_anomaly_detection_test.js"
+  ],
+  "commitMessage": "refactor(finance): extract anomaly detection"
+}
