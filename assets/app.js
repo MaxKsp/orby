@@ -1188,11 +1188,10 @@ async function getExpenseLines(){
 async function getIncomeLines(){
   return await storeGet('income_lines', []);
 }
-function isIncomeActive(line, now){
-  if (line.type !== 'temporaria') return true;
-  if (!line.endDate) return true;
-  return dnum(new Date(line.endDate+'T00:00:00')) >= dnum(now);
-}
+/* isIncomeActive: extraída (Fase 20) para
+   app/Modules/Finance/Frontend/finance-income-activation-calculation.js e
+   assets/finance-income-activation-calculation.js, carregadas antes deste
+   arquivo. */
 const TYPE_LABEL = {fixa:'Fixa', variavel:'Variável', temporaria:'Temporária'};
 
 
