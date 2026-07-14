@@ -47,6 +47,7 @@ function Invoke-Validator {
             -File $validator `
             -Phase $PhasePath `
             -RunDirectory $RunDirectory `
+            -ResultPath (Join-Path $RunDirectory 'validation-result.json') `
             -SkipScope `
             -ValidationCommandTimeoutSeconds $TimeoutSeconds 2>&1
         return [pscustomobject]@{
@@ -91,6 +92,8 @@ try {
     if ($successLastCommand.Trim() -ne $stdinCommand) {
         throw 'Last validation command was not recorded in the newly created run directory.'
     }
+    $successResult = Get-Content -LiteralPath (Join-Path $successRun 'validation-result.json') -Raw | ConvertFrom-Json
+    if (-not $successResult.passed) { throw 'Structured validation result did not report success.' }
 
     $timeoutRun = Join-Path $testRoot 'timeout-run'
     $timeoutPhase = Join-Path $testRoot 'timeout.json'
@@ -107,6 +110,8 @@ try {
     }
     $lastCommand = Get-Content -LiteralPath (Join-Path $timeoutRun 'validation-last-command.txt') -Raw
     if ($lastCommand.Trim() -ne $timeoutCommand) { throw 'Last validation command was not recorded.' }
+    $timeoutResult = Get-Content -LiteralPath (Join-Path $timeoutRun 'validation-result.json') -Raw | ConvertFrom-Json
+    if ($timeoutResult.passed -or @($timeoutResult.failed).Count -ne 1) { throw 'Structured validation result did not preserve the failed command.' }
 
     Write-Host 'Validation runner controlled test: OK'
 }

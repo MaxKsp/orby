@@ -2,6 +2,8 @@
 param(
     [string]$Phase,
 
+    [string]$ResumePhase,
+
     [switch]$AutoNextPhase,
 
     [int]$MaxPhases = 1,
@@ -240,7 +242,8 @@ function Assert-CleanPreconditions {
     param(
         [string]$RepoRoot,
         [string]$ResolvedPhasePath,
-        [string]$AllowedDirtyPath
+        [string]$AllowedDirtyPath,
+        [switch]$ResumeMode
     )
 
     $gitRoot = (& git rev-parse --show-toplevel).Trim()
@@ -261,6 +264,25 @@ function Assert-CleanPreconditions {
     if ($AllowedDirtyPath) {
         $normalizedAllowedDirtyPath = $AllowedDirtyPath.Replace('\', '/').TrimStart('.', '/')
         $dirtyFiles = @($dirtyFiles | Where-Object { $_ -ne $normalizedAllowedDirtyPath })
+    }
+    if ($ResumeMode) {
+        $resumePhase = Get-PhaseObject -Path $ResolvedPhasePath
+        $phaseRelativePath = $ResolvedPhasePath.Substring($RepoRoot.Length).TrimStart('\', '/').Replace('\', '/')
+        $resumeAllowedFiles = @($resumePhase.allowedFiles | ForEach-Object { $_.ToString().Replace('\', '/') }) + @($phaseRelativePath)
+        $unexpectedDirtyFiles = @()
+        foreach ($dirtyFile in $dirtyFiles) {
+            $dirtyFileAllowed = $false
+            foreach ($allowedFile in $resumeAllowedFiles) {
+                if (($allowedFile.EndsWith('/') -and $dirtyFile.StartsWith($allowedFile, [System.StringComparison]::OrdinalIgnoreCase)) -or $dirtyFile.Equals($allowedFile, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $dirtyFileAllowed = $true
+                    break
+                }
+            }
+            if (-not $dirtyFileAllowed) {
+                $unexpectedDirtyFiles += $dirtyFile
+            }
+        }
+        $dirtyFiles = @($unexpectedDirtyFiles)
     }
     if ($dirtyFiles.Count -gt 0) {
         throw "Working tree must be clean before starting a phase. Unexpected: $($dirtyFiles -join ', ')"
@@ -292,6 +314,59 @@ function Assert-CleanPreconditions {
     }
 
     return $branch
+}
+
+function Assert-FilesWithinAllowlist {
+    param(
+        [string[]]$Files,
+        $PhaseObject
+    )
+
+    $allowedFiles = @($PhaseObject.allowedFiles | ForEach-Object { $_.ToString().Replace('\', '/') })
+    $outsideAllowlist = @()
+    foreach ($file in $Files) {
+        $isAllowed = $false
+        foreach ($rule in $allowedFiles) {
+            if (($rule.EndsWith('/') -and $file.StartsWith($rule, [System.StringComparison]::OrdinalIgnoreCase)) -or $file.Equals($rule, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $isAllowed = $true
+                break
+            }
+        }
+        if (-not $isAllowed) {
+            $outsideAllowlist += $file
+        }
+    }
+    if ($outsideAllowlist.Count -gt 0) {
+        throw "Claude modified files outside the phase allowlist: $($outsideAllowlist -join ', ')"
+    }
+}
+
+function Get-WorkspaceSnapshot {
+    param([string[]]$ExcludePaths = @())
+
+    $snapshot = @{}
+    foreach ($file in @(Get-ChangedFiles -ExcludePaths $ExcludePaths)) {
+        $nativePath = $file.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+        if (Test-Path -LiteralPath $nativePath -PathType Leaf) {
+            $snapshot[$file] = (Get-FileHash -LiteralPath $nativePath -Algorithm SHA256).Hash
+        } else {
+            $snapshot[$file] = '<deleted>'
+        }
+    }
+    return $snapshot
+}
+
+function Get-SnapshotChangedFiles {
+    param([hashtable]$Before, [hashtable]$After)
+
+    $keys = @($Before.Keys) + @($After.Keys) | Sort-Object -Unique
+    $changed = @()
+    foreach ($key in $keys) {
+        if (-not $Before.ContainsKey($key) -or -not $After.ContainsKey($key) -or $Before[$key] -ne $After[$key]) {
+            $changed += $key
+        }
+    }
+    return @($changed)
 }
 
 function New-RunDirectory {
@@ -990,6 +1065,148 @@ $($Blockers -join [Environment]::NewLine)
     ) -RunDirectory $RunDirectory -TimeoutSeconds $ImplementerTimeoutSeconds -HeartbeatIntervalSeconds $HeartbeatSeconds -StandardInputText $prompt
 }
 
+function Get-ValidationFailureGuidance {
+    param([object[]]$FailedItems)
+
+    $failureText = @($FailedItems | ForEach-Object { "$($_.stdout)`n$($_.stderr)" }) -join "`n"
+    $guidance = New-Object System.Collections.Generic.List[string]
+    $testOnly = $false
+
+    if ($failureText -match 'Values have same structure but are not reference-equal') {
+        $testOnly = $true
+        $guidance.Add('Known failure: Node vm cross-realm assertion. Change only the test. Normalize arrays with Array.from() and objects with Object.assign({}, value), spread, or an equivalent normalization. Do not change production logic.')
+    }
+    if ($failureText -match '\d+\.\d{10,}\s*!==\s*\d+' -or $failureText -match 'IEEE-?754|floating.?point|precision') {
+        $testOnly = $true
+        $guidance.Add('Known failure: residual IEEE-754 floating-point precision. Change only the test and use a numeric tolerance such as assert.ok(Math.abs(actual - expected) < 1e-9). Do not round or change production unless the functional contract proves rounding is required.')
+    }
+    if ($failureText -match 'MODULE_NOT_FOUND') {
+        $guidance.Add('Known failure: MODULE_NOT_FOUND. First compare the expected name in the phase JSON with the file actually created. Correct inconsistent test/phase naming only; do not create duplicate artifacts.')
+    }
+
+    return [pscustomobject]@{
+        lines = @($guidance)
+        testOnly = $testOnly
+    }
+}
+
+function Get-ValidationRetryAction {
+    param(
+        [int]$ExitCode,
+        [int]$AttemptsUsed,
+        [int]$MaximumAttempts,
+        [object[]]$FailedItems
+    )
+
+    if ($ExitCode -eq 0) {
+        return 'review'
+    }
+    if (@($FailedItems | Where-Object { $_.label -eq 'scope' }).Count -gt 0) {
+        return 'reject-scope'
+    }
+    if ($AttemptsUsed -ge $MaximumAttempts) {
+        return 'stop'
+    }
+    return 'retry'
+}
+
+function Invoke-PhaseValidationAttempt {
+    param(
+        [string]$PowerShellExecutable,
+        [string[]]$ValidationArguments,
+        [string]$RunDirectory,
+        [int]$AttemptNumber
+    )
+
+    $validationPath = Join-Path $RunDirectory ("validation-attempt-{0}.json" -f $AttemptNumber)
+    $attemptArguments = @($ValidationArguments + @('-ResultPath', $validationPath))
+    $null = & $PowerShellExecutable @attemptArguments
+    $exitCode = $LASTEXITCODE
+    if (-not (Test-Path -LiteralPath $validationPath -PathType Leaf)) {
+        throw "Validation did not create its structured result at $validationPath. ExitCode=$exitCode"
+    }
+    $validationText = Get-Content -LiteralPath $validationPath -Raw
+
+    try {
+        $validationObject = $validationText | ConvertFrom-Json
+    } catch {
+        throw "Validation did not produce valid JSON at $validationPath. ExitCode=$exitCode"
+    }
+    if ($exitCode -ne 0) {
+        $failedPath = Join-Path $RunDirectory ("validation-failures-attempt-{0}.json" -f $AttemptNumber)
+        ConvertTo-Json -InputObject @($validationObject.failed) -Depth 8 | Out-File -LiteralPath $failedPath -Encoding utf8
+    }
+
+    return [pscustomobject]@{
+        exitCode = $exitCode
+        data = $validationObject
+        path = $validationPath
+    }
+}
+
+function Invoke-ValidationCorrection {
+    param(
+        [string]$RepoRoot,
+        [string]$RunDirectory,
+        $PhaseObject,
+        [object[]]$FailedItems,
+        [int]$AttemptNumber
+    )
+
+    $changedBefore = @(Get-ChangedFiles -ExcludePaths @($GeneratedPhaseDefinition))
+    Assert-FilesWithinAllowlist -Files $changedBefore -PhaseObject $PhaseObject
+    $snapshotBefore = Get-WorkspaceSnapshot -ExcludePaths @($GeneratedPhaseDefinition)
+    $guidance = Get-ValidationFailureGuidance -FailedItems $FailedItems
+    $failedCommands = @($FailedItems | ForEach-Object {
+        [ordered]@{ command = $_.command; stdout = $_.stdout; stderr = $_.stderr }
+    }) | ConvertTo-Json -Depth 6
+
+    $template = Get-Content -LiteralPath (Join-Path $RepoRoot 'automation/prompts/validation-fix.md') -Raw
+    $prompt = $template.Replace('{{PHASE_ID}}', $PhaseObject.id.ToString())
+    $prompt = $prompt.Replace('{{ALLOWLIST}}', (@($PhaseObject.allowedFiles) -join [Environment]::NewLine))
+    $prompt = $prompt.Replace('{{DENYLIST}}', (@($PhaseObject.forbiddenFiles) -join [Environment]::NewLine))
+    $prompt = $prompt.Replace('{{CHANGED_FILES}}', ($changedBefore -join [Environment]::NewLine))
+    $prompt = $prompt.Replace('{{FAILED_COMMANDS}}', $failedCommands)
+    $prompt = $prompt.Replace('{{KNOWN_GUIDANCE}}', (@($guidance.lines) -join [Environment]::NewLine))
+    $promptPath = Join-Path $RunDirectory ("fix-prompt-attempt-{0}.txt" -f $AttemptNumber)
+    $prompt | Out-File -LiteralPath $promptPath -Encoding utf8
+
+    $claudeCmd = Resolve-AgentCommandPath -Name 'claude'
+    $claudeTools = 'Read,Glob,Grep,Edit,Write'
+    $claudeArgs = @(
+        '-p',
+        '--permission-mode', $ClaudePermissionMode,
+        '--tools', $claudeTools,
+        '--allowedTools', $claudeTools,
+        '--disallowedTools', 'Bash,WebFetch,WebSearch',
+        '--no-session-persistence'
+    )
+    $null = Invoke-NativeProcess `
+        -StageName ("fix-implementer-attempt-{0}" -f $AttemptNumber) `
+        -FilePath $claudeCmd `
+        -ArgumentList $claudeArgs `
+        -RunDirectory $RunDirectory `
+        -TimeoutSeconds $ImplementerTimeoutSeconds `
+        -HeartbeatIntervalSeconds $HeartbeatSeconds `
+        -StandardInputText $prompt
+
+    $changedAfter = @(Get-ChangedFiles -ExcludePaths @($GeneratedPhaseDefinition))
+    Assert-FilesWithinAllowlist -Files $changedAfter -PhaseObject $PhaseObject
+    $snapshotAfter = Get-WorkspaceSnapshot -ExcludePaths @($GeneratedPhaseDefinition)
+    $filesChangedByFix = @(Get-SnapshotChangedFiles -Before $snapshotBefore -After $snapshotAfter)
+    if ($filesChangedByFix.Count -eq 0) {
+        throw "Claude made no workspace change during fix attempt $AttemptNumber. Stopping to avoid an infinite retry loop."
+    }
+    if ($guidance.testOnly) {
+        $productionChanges = @($filesChangedByFix | Where-Object { -not $_.StartsWith('tests/', [System.StringComparison]::OrdinalIgnoreCase) })
+        if ($productionChanges.Count -gt 0) {
+            throw "Test-only validation failure changed production files: $($productionChanges -join ', ')"
+        }
+    }
+
+    return @($filesChangedByFix)
+}
+
 function Write-Summary {
     param(
         [string]$Path,
@@ -1049,8 +1266,8 @@ $powerShellExe = Get-PowerShellExecutable
 Set-Location -LiteralPath $repoRoot
 
 if ($AutoNextPhase) {
-    if ($Phase) {
-        throw 'Use either -AutoNextPhase or -Phase, not both.'
+    if ($Phase -or $ResumePhase) {
+        throw 'Use -AutoNextPhase, -Phase, or -ResumePhase; do not combine them.'
     }
     if ($MaxPhases -lt 1) {
         throw 'MaxPhases must be at least 1.'
@@ -1134,12 +1351,21 @@ if ($AutoNextPhase) {
     return
 }
 
+if ($Phase -and $ResumePhase) {
+    throw 'Use either -Phase or -ResumePhase, not both.'
+}
+if ($ResumePhase) {
+    $Phase = $ResumePhase
+}
 if (-not $Phase) {
-    throw 'Specify -Phase or -AutoNextPhase.'
+    throw 'Specify -Phase, -ResumePhase, or -AutoNextPhase.'
 }
 
 $resolvedPhasePath = Join-Path $repoRoot $Phase
-$branch = Assert-CleanPreconditions -RepoRoot $repoRoot -ResolvedPhasePath $resolvedPhasePath -AllowedDirtyPath $GeneratedPhaseDefinition
+$branch = Assert-CleanPreconditions -RepoRoot $repoRoot -ResolvedPhasePath $resolvedPhasePath -AllowedDirtyPath $GeneratedPhaseDefinition -ResumeMode:$([bool]$ResumePhase)
+if ($ResumePhase -and -not $GeneratedPhaseDefinition) {
+    $GeneratedPhaseDefinition = $Phase
+}
 $runDirectory = New-RunDirectory -RepoRoot $repoRoot
 if ($ClaudePermissionMode -eq 'bypassPermissions') {
     throw 'ClaudePermissionMode bypassPermissions is prohibited.'
@@ -1155,6 +1381,8 @@ $planSchemaPath = Join-Path $repoRoot 'automation/schemas/plan.schema.json'
 $reviewSchemaPath = Join-Path $repoRoot 'automation/schemas/review.schema.json'
 $failures = New-Object System.Collections.Generic.List[string]
 $attempts = 0
+$validationFixAttempts = 0
+$reviewFixAttempts = 0
 $commitSha = ''
 $pushStatus = 'not-requested'
 $reviewApproved = $false
@@ -1176,7 +1404,9 @@ if ($VerboseLogs) {
 
 try {
     $planJson = $null
-    if ($SkipArchitect) {
+    if ($ResumePhase) {
+        $planJson = '{"approved":true,"summary":"Resume existing phase diff.","steps":[],"risks":[]}'
+    } elseif ($SkipArchitect) {
         $skipPath = Join-Path $runDirectory 'plan.json'
         if (-not (Test-Path -LiteralPath $skipPath)) {
             $skipPath = Find-LatestPlanPath -RepoRoot $repoRoot
@@ -1213,7 +1443,9 @@ try {
         return
     }
 
-    Invoke-ClaudeImplementation -RepoRoot $repoRoot -RunDirectory $runDirectory -PhaseJson $phaseJson -PlanJson $planJson
+    if (-not $ResumePhase) {
+        Invoke-ClaudeImplementation -RepoRoot $repoRoot -RunDirectory $runDirectory -PhaseJson $phaseJson -PlanJson $planJson
+    }
 
     $validationArgs = @(
         '-NoProfile',
@@ -1229,20 +1461,56 @@ try {
     if ($VerboseLogs) {
         $validationArgs += '-VerboseLogs'
     }
-    Write-Host 'Implementer finished, starting validation'
-    & $powerShellExe @validationArgs
-    if ($LASTEXITCODE -ne 0) {
-        $failures.Add('Deterministic validation failed after implementation.')
-        throw 'Validation failed.'
+    if ($ResumePhase) {
+        Write-Host 'ResumePhase starting validation'
+    } else {
+        Write-Host 'Implementer finished, starting validation'
+    }
+
+    $validationAttemptNumber = 1
+    $validationResult = Invoke-PhaseValidationAttempt -PowerShellExecutable $powerShellExe -ValidationArguments $validationArgs -RunDirectory $runDirectory -AttemptNumber $validationAttemptNumber
+    $validationAction = Get-ValidationRetryAction -ExitCode $validationResult.exitCode -AttemptsUsed $validationFixAttempts -MaximumAttempts $MaxFixAttempts -FailedItems @($validationResult.data.failed)
+    while ($validationAction -eq 'retry') {
+        $failedItems = @($validationResult.data.failed)
+        if ($failedItems.Count -eq 0) {
+            throw "Validation attempt $validationAttemptNumber failed without structured failed items."
+        }
+        $scopeFailures = @($failedItems | Where-Object { $_.label -eq 'scope' })
+        if ($scopeFailures.Count -gt 0) {
+            throw 'Scope validation failed; automatic scope expansion is prohibited.'
+        }
+
+        $validationFixAttempts++
+        $attempts++
+        Write-Host ("[Fix {0}/{1}] preparing targeted correction" -f $validationFixAttempts, $MaxFixAttempts)
+        Write-Host ("[Fix {0}/{1}] Claude running..." -f $validationFixAttempts, $MaxFixAttempts)
+        $fixChangedFiles = @(Invoke-ValidationCorrection -RepoRoot $repoRoot -RunDirectory $runDirectory -PhaseObject $phaseObject -FailedItems $failedItems -AttemptNumber $validationFixAttempts)
+        Write-Host ("[Fix {0}/{1}] changed files: {2}" -f $validationFixAttempts, $MaxFixAttempts, ($fixChangedFiles -join ', '))
+        Write-Host ("[Fix {0}/{1}] revalidating..." -f $validationFixAttempts, $MaxFixAttempts)
+        $validationAttemptNumber++
+        $validationResult = Invoke-PhaseValidationAttempt -PowerShellExecutable $powerShellExe -ValidationArguments $validationArgs -RunDirectory $runDirectory -AttemptNumber $validationAttemptNumber
+        if ($validationResult.exitCode -eq 0) {
+            Write-Host ("[Fix {0}/{1}] validation passed" -f $validationFixAttempts, $MaxFixAttempts)
+        }
+        $validationAction = Get-ValidationRetryAction -ExitCode $validationResult.exitCode -AttemptsUsed $validationFixAttempts -MaximumAttempts $MaxFixAttempts -FailedItems @($validationResult.data.failed)
+    }
+    if ($validationAction -eq 'reject-scope') {
+        throw 'Scope validation failed; automatic scope expansion is prohibited.'
+    }
+    if ($validationAction -eq 'stop') {
+        $finalBlockers = @($validationResult.data.failed | ForEach-Object { $_.command })
+        $failures.Add("Validation still failed after $validationFixAttempts correction attempt(s): $($finalBlockers -join '; ')")
+        throw 'Validation failed after reaching MaxFixAttempts.'
     }
 
     $reviewJson = Invoke-CodexReview -RepoRoot $repoRoot -RunDirectory $runDirectory -PhaseJson $phaseJson -PlanJson $planJson -SchemaPath $reviewSchemaPath
     $reviewObject = $reviewJson | ConvertFrom-Json
 
-    while ((-not $reviewObject.approved -or @($reviewObject.blockers).Count -gt 0) -and $attempts -lt $MaxFixAttempts) {
+    while ((-not $reviewObject.approved -or @($reviewObject.blockers).Count -gt 0) -and $reviewFixAttempts -lt $MaxFixAttempts) {
+        $reviewFixAttempts++
         $attempts++
 
-        Invoke-FixAttempt -RepoRoot $repoRoot -RunDirectory $runDirectory -PhaseJson $phaseJson -PlanJson $planJson -Blockers @($reviewObject.blockers) -AttemptNumber $attempts
+        Invoke-FixAttempt -RepoRoot $repoRoot -RunDirectory $runDirectory -PhaseJson $phaseJson -PlanJson $planJson -Blockers @($reviewObject.blockers) -AttemptNumber $reviewFixAttempts
 
         $validationJson = & $powerShellExe @validationArgs
         if ($LASTEXITCODE -ne 0) {

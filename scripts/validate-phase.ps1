@@ -5,6 +5,8 @@ param(
 
     [string]$RunDirectory,
 
+    [string]$ResultPath,
+
     [switch]$SkipScope,
 
     [string[]]$ExcludedFiles = @(),
@@ -222,6 +224,18 @@ function Ensure-ParentDirectory {
     }
 }
 
+function Write-ValidationResult {
+    param([Parameter(Mandatory = $true)]$Result)
+
+    $json = $Result | ConvertTo-Json -Depth 6
+    if ($ResultPath) {
+        $absoluteResultPath = [System.IO.Path]::GetFullPath($ResultPath)
+        Ensure-ParentDirectory -Path $absoluteResultPath
+        $json | Out-File -LiteralPath $absoluteResultPath -Encoding utf8
+    }
+    Write-Output $json
+}
+
 function Invoke-LoggedCommand {
     param(
         [Parameter(Mandatory = $true)]
@@ -422,7 +436,14 @@ if (-not $SkipScope) {
     }
 
     if (-not $scopeResult.passed) {
-        throw 'Scope validation failed.'
+        $scopeSummary = [pscustomobject]@{
+            phaseId = $phaseObject.id
+            passed = $false
+            results = @($scopeResult)
+            failed = @($scopeResult)
+        }
+        Write-ValidationResult -Result $scopeSummary
+        exit 1
     }
 }
 
@@ -451,7 +472,7 @@ $summary = [pscustomobject]@{
     failed   = @($failed)
 }
 
-$summary | ConvertTo-Json -Depth 6
+Write-ValidationResult -Result $summary
 
 if ($failed.Count -gt 0) {
     exit 1

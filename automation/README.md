@@ -71,6 +71,7 @@ Optional flags:
 - `-SkipArchitect`
 - `-UseCodexUserConfig`
 - `-MaxFixAttempts 2`
+- `-ResumePhase automation\phases\phase-18.json`
 - `-ArchitectTimeoutSeconds 300`
 - `-ImplementerTimeoutSeconds 900`
 - `-ClaudePermissionMode acceptEdits`
@@ -100,6 +101,45 @@ It stops before deterministic validation when no file changed or when any
 changed file is outside the phase `allowedFiles`. The log records the permission
 mode, allowed tools, working directory, and changed files. Deterministic scope
 and test validation still runs afterward for accepted changes.
+
+## Automatic Validation Corrections
+
+`-MaxFixAttempts` defaults to 2. When deterministic validation fails, the
+pipeline saves only the structured `failed` entries, builds a short correction
+prompt containing the phase id, allowlist, denylist, current changed files, and
+stdout/stderr from failed commands, then calls Claude again with the same
+restricted `acceptEdits` permissions. Passed commands, the original prompt,
+project documentation, and full phase history are not resent.
+
+Every correction is scope-checked before the complete validation suite runs
+again. A scope violation, a correction that changes no file, or exhaustion of
+`MaxFixAttempts` stops immediately and preserves the working tree. Known Node
+`vm` cross-realm and residual IEEE-754 failures are classified as test-only;
+the pipeline rejects production changes made for those corrections.
+`MODULE_NOT_FOUND` guidance first checks phase/test naming and forbids duplicate
+artifacts.
+
+Artifacts include `validation-attempt-N.json`,
+`validation-failures-attempt-N.json`, `fix-prompt-attempt-N.txt`, and separate
+`fix-implementer-attempt-N.stdout.log` / `.stderr.log` files. Reviewer runs only
+after validation passes.
+
+Resume an already implemented phase with:
+
+```powershell
+.\scripts\ai-pipeline.ps1 -ResumePhase automation\phases\phase-18.json
+```
+
+Resume mode accepts a dirty tree only when every changed file is in the phase
+allowlist or is the phase JSON itself. It skips Architect and the initial
+Implementer, starts with deterministic validation, applies the same correction
+cycle, then continues to Reviewer and human commit confirmation.
+
+The controlled retry-policy checks run without a real phase or commit:
+
+```powershell
+.\scripts\test-validation-fix-loop.ps1
+```
 
 The controlled write check can be run independently without running a phase:
 
