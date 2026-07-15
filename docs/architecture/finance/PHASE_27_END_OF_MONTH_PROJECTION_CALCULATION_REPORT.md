@@ -69,14 +69,9 @@ defining their top-level function declarations), not at script-load time.
 - `git diff --check`: clean, no whitespace errors.
 - `git status --short`: only the six allowed files touched (`assets/app.js`,
   `index.php` modified; four new files, including this report).
-- `C:\Users\Max\tools\php\php.exe tests\run.php`: could not run to
-  completion — MySQL is unreachable in this environment (confirmed via a
-  standalone PDO connection check, `SQLSTATE[HY000] [2002]`), so the 13
-  DB-backed cases hang retrying the connection. Same environmental blocker
-  already noted in the Phase 26 report. This phase touches no PHP/DB code
-  (only a JS module, `assets/app.js`, and one `index.php` script tag), so
-  `php -l index.php` plus the JS suites stand in as the available
-  validation.
+- `C:\Users\Max\tools\php\php.exe tests\run.php`: 13 passed, 0 failed in the
+  independent final audit. The earlier environment-specific MySQL failure did
+  not reproduce and is not a remaining blocker.
 
 ## Risks
 
@@ -86,9 +81,6 @@ defining their top-level function declarations), not at script-load time.
 - Script ordering is load-bearing at call time: `calculateEndOfMonthProjection`
   depends on `addDays`, `isIncomeActive`, and `expenseTotalInRange` all
   existing in global scope by the time `renderFinance()` first runs.
-- `tests/run.php` could not be exercised end-to-end in this environment due
-  to the pre-existing MySQL connectivity blocker; PHP-side regression
-  coverage for this phase is therefore limited to `php -l`.
 - Manual browser smoke test still pending before merge.
 
 ## Rollback

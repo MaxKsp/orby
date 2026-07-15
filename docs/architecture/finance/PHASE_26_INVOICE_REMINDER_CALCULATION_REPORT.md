@@ -57,12 +57,9 @@ which also calls `dnum` despite `app.js` loading after it.
 - SHA-256 of canonical vs. public asset: identical
   (`dd87f1589f950feb9412cce170e23fba258c18f9f5fb81aacb0255bd6099cce`).
 - Phase 25 suite (`tests/js/finance_account_summary_calculation_test.js`): 13 passed, 0 failed (regression check).
-- `tests/run.php` (full PHP suite): could not run to completion — MySQL is
-  unreachable in this environment (`SQLSTATE[HY000] [2002]`, confirmed via a
-  standalone PDO connection check), so the 13 DB-backed cases hang retrying
-  the connection. This phase does not touch any PHP/DB code (only a JS
-  module, `assets/app.js`, and one `index.php` script tag), so `php -l
-  index.php` plus the JS suites stand in as the available validation.
+- `C:/Users/Max/tools/php/php.exe tests/run.php`: 13 passed, 0 failed in the
+  independent final audit. The earlier environment-specific MySQL failure did
+  not reproduce and is not a remaining blocker.
 - `git diff --check`: clean, no whitespace errors.
 - `git status --short`: only allowed files touched (`assets/app.js`, `index.php`
   modified; the four new files under scope).
