@@ -1,8 +1,13 @@
-DirectoryIndex index.php
+DirectoryIndex index.html index.php
 
 RewriteEngine On
 RewriteCond %{HTTPS} off
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# O frontend React e a entrada publica principal. Mantem compatibilidade com
+# favoritos antigos que ainda apontam explicitamente para /index.php.
+RewriteCond %{THE_REQUEST} \s/+index\.php(?:[?\s]) [NC]
+RewriteRule ^index\.php$ / [L,R=302]
 
 # Arquivos que nunca devem ser servidos diretamente: credenciais, schema e
 # includes internos (só fazem sentido via require_once de outra página).

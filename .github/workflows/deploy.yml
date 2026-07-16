@@ -26,9 +26,9 @@ jobs:
           npm run lint
           npm run test:run
 
-      - name: Gerar frontend para /frontend/
+      - name: Gerar frontend para a raiz publica
         working-directory: frontend
-        run: npm run build -- --base=/frontend/
+        run: npm run build
 
       - name: Deploy da aplicacao PHP via FTPS
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -50,7 +50,7 @@ jobs:
             frontend/**
             uploads/**
 
-      - name: Deploy do frontend React via FTPS
+      - name: Deploy do frontend React na raiz via FTPS
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
@@ -58,5 +58,5 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           protocol: ftps
           local-dir: frontend/dist/
-          server-dir: ${{ secrets.FTP_SERVER_DIR }}frontend/
+          server-dir: ${{ secrets.FTP_SERVER_DIR }}
           state-name: .ftp-deploy-sync-state-frontend.json
