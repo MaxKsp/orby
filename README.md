@@ -1,84 +1,165 @@
 <h1 align="center">Orby</h1>
 
 <p align="center">
-  <b>Rotina, financas pessoais e organizacao diaria em um unico painel.</b>
+  <b>Rotina, finanças pessoais, treinos e organização diária em um único painel self-hosted.</b>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/PHP-777BB4?style=flat&logo=php&logoColor=white" />
-  <img src="https://img.shields.io/badge/MySQL-4479A1?style=flat&logo=mysql&logoColor=white" />
-  <img src="https://img.shields.io/badge/JavaScript-F7DF1E?style=flat&logo=javascript&logoColor=black" />
-  <img src="https://img.shields.io/badge/PWA-5A0FC8?style=flat&logo=pwa&logoColor=white" />
-  <img src="https://img.shields.io/badge/2FA-TOTP-informational?style=flat" />
-  <img src="https://img.shields.io/badge/Backup-Encrypted-success?style=flat" />
-  <img src="https://img.shields.io/badge/Self--Hosted-000000?style=flat" />
+  <a href="https://github.com/MaxKsp/orby/actions/workflows/tests.yml">
+    <img src="https://github.com/MaxKsp/orby/actions/workflows/tests.yml/badge.svg" alt="Testes automatizados" />
+  </a>
+  <img src="https://img.shields.io/badge/PHP-8%2B-777BB4?style=flat&logo=php&logoColor=white" alt="PHP 8+" />
+  <img src="https://img.shields.io/badge/MySQL-4479A1?style=flat&logo=mysql&logoColor=white" alt="MySQL" />
+  <img src="https://img.shields.io/badge/JavaScript-Vanilla-F7DF1E?style=flat&logo=javascript&logoColor=black" alt="JavaScript" />
+  <img src="https://img.shields.io/badge/PWA-ready-5A0FC8?style=flat&logo=pwa&logoColor=white" alt="PWA" />
+  <img src="https://img.shields.io/badge/2FA-TOTP-informational?style=flat" alt="2FA TOTP" />
+  <img src="https://img.shields.io/badge/Backup-criptografado-success?style=flat" alt="Backup criptografado" />
+  <img src="https://img.shields.io/badge/Self--Hosted-000000?style=flat" alt="Self-hosted" />
 </p>
 
 ---
 
-O **Orby** e um painel pessoal self-hosted para centralizar rotina, financas, treinos e preferencias em uma unica aplicacao.
+## Sobre o Projeto
 
-A ideia e simples: abrir uma tela e entender o que precisa ser feito, como esta o dinheiro, quais compromissos existem e quais habitos estao evoluindo. O projeto foi construido para rodar em hospedagem compartilhada comum, usando **PHP + MySQL**, sem depender de framework pesado ou servicos pagos obrigatorios.
+O **Orby** é uma aplicação web pessoal para centralizar rotina, finanças, treinos, metas e preferências em uma única experiência. A ideia é substituir a dependência de várias planilhas e aplicativos isolados por um painel próprio, instalável como PWA e preparado para rodar em hospedagem compartilhada comum.
 
-Tambem serve como base tecnica de produto: multiusuario, autenticacao, 2FA, API propria, PWA, deploy automatizado, testes e backup/restauracao criptografados.
+O projeto foi pensado para uso real, mas também como base técnica evolutiva: possui autenticação, multiusuário, 2FA, API própria em PHP, MySQL, deploy automatizado, testes, contratos de schema e backup/restauração criptografados.
+
+**Proposta:** entregar uma experiência prática de organização pessoal com uma arquitetura simples de operar, barata de hospedar e segura o suficiente para evoluir como produto.
+
+---
+
+## Status Atual
+
+| Área | Status |
+|---|---|
+| Financeiro pessoal | Em uso e evolução contínua |
+| Rotina e agenda | Funcional |
+| Treinos e medidas | Funcional |
+| Multiusuário | Implementado |
+| 2FA TOTP | Implementado |
+| Login com Google | Implementado |
+| PWA | Implementado |
+| Testes automatizados | Implementado em PHP e JavaScript |
+| Backup criptografado | Implementado |
+| Deploy via GitHub Actions | Implementado |
+| Modelo de assinatura | Base inicial implementada |
 
 ---
 
 ## Funcionalidades
 
-**Financeiro**
+### Financeiro
 
-- Visao consolidada de saldo, patrimonio, faturas e credito disponivel.
-- Cadastro de contas, cartoes, bancos, receitas e despesas.
+- Visão consolidada de saldo, patrimônio, faturas e crédito disponível.
+- Cadastro de contas, cartões, bancos, receitas e despesas.
+- Cards de conta/cartão com informações de saldo, limite, fatura, vencimento e melhor dia de compra.
 - Despesas avulsas, recorrentes e parceladas.
-- Transferencia entre contas e pagamento de fatura.
+- Transferência entre contas.
+- Pagamento de fatura de cartão com conta.
 - Cofrinhos/metas de guardar dinheiro por conta.
-- Cheque especial, limite de cartao, vencimento e melhor dia de compra.
-- Importacao e conciliacao por extrato bancario OFX.
-- Relatorios, graficos, mapa de calor e resumo anual para IR.
-- Busca, filtros e agrupamento por conta, banco e categoria.
+- Cheque especial por conta, com limite e alerta de uso.
+- Rendas fixas, temporárias e variáveis.
+- Importação e conciliação por extrato bancário OFX.
+- Busca e filtros em lançamentos.
+- Gráficos, análises, mapa de calor e histórico mensal.
+- Relatório anual para IR.
+- Visão por conta, banco e categoria.
 
-**Rotina**
+### Rotina
 
 - Agenda semanal.
-- Checklist diario.
-- Sequencia de dias concluidos.
-- Graficos de progresso.
-- Lembretes e notificacoes.
+- Checklist diário.
+- Sequência de dias concluídos.
+- Gráficos de progresso.
+- Mapa de calor de conclusão.
+- Lembretes e notificações.
 
-**Treinos**
+### Treinos
 
-- Cadastro de treinos e exercicios.
+- Cadastro de treinos e exercícios.
 - Checklist do treino do dia.
-- Registro de carga e progressao.
-- Medidas corporais, peso e IMC.
+- Registro de carga e progressão.
+- Medidas corporais.
+- Peso, IMC e acompanhamento de evolução.
 
-**Plataforma**
+### Plataforma
 
-- Multiusuario com dados isolados por conta.
-- Login com senha e Google OAuth.
-- Verificacao em duas etapas com TOTP.
-- Codigos de backup para 2FA.
-- Preferencias sincronizadas por usuario.
-- PWA instalavel.
-- Deploy automatizado via GitHub Actions.
+- Multiusuário com dados isolados por conta.
+- Login com senha.
+- Login com Google OAuth.
+- Verificação em duas etapas com TOTP.
+- Códigos de backup para recuperação do 2FA.
+- Preferências sincronizadas por usuário.
+- Temas e ajustes de perfil.
+- PWA instalável.
+- Deploy automatizado.
+- Rotinas operacionais de backup e restauração.
 
 ---
 
-## Backup e Restauracao Criptografados
+## Diferenciais Técnicos
 
-O Orby possui uma rotina de backup e restore voltada para operacao segura.
+- **Sem framework pesado:** PHP, MySQL e JavaScript vanilla.
+- **Hospedagem simples:** projetado para rodar em hospedagem compartilhada.
+- **API própria:** endpoints PHP organizados por responsabilidade.
+- **Segurança aplicada:** CSRF, rate limit, 2FA, isolamento por usuário e headers de proteção.
+- **Operação real:** deploy via GitHub Actions, scripts de manutenção e CI.
+- **Backup seguro:** artefato criptografado com libsodium e restore validado.
+- **Contratos de schema:** validação de estrutura para reduzir risco operacional.
+- **Testes automatizados:** suíte PHP e validações JavaScript no pipeline.
 
-O backup usa:
+---
+
+## Stack
+
+| Camada | Escolha |
+|---|---|
+| Front-end | HTML, CSS e JavaScript vanilla |
+| Gráficos | Chart.js |
+| Back-end | PHP 8+ |
+| Banco de dados | MySQL |
+| Acesso a dados | PDO com prepared statements |
+| Autenticação | Sessão PHP, bcrypt, Google OAuth e TOTP |
+| Segurança | CSRF, rate limit, headers, isolamento por usuário |
+| PWA | Manifest + Service Worker |
+| CI | GitHub Actions |
+| Deploy | GitHub Actions + FTPS |
+| Backup | PHP + libsodium secretstream |
+
+---
+
+## Segurança
+
+O projeto já possui uma base de segurança aplicada:
+
+- senhas com hash seguro;
+- proteção CSRF em fluxos sensíveis;
+- verificação em duas etapas com TOTP;
+- códigos de backup para 2FA;
+- dados isolados por usuário;
+- rate limit em autenticação e endpoints sensíveis;
+- `config.php` fora do versionamento;
+- headers de proteção via `.htaccess`;
+- backup criptografado com chave fora do repositório;
+- restore com validação de alvo para evitar sobrescrever o banco da aplicação.
+
+---
+
+## Backup e Restauração Criptografados
+
+O Orby possui uma rotina de backup e restore voltada para operação segura.
+
+O artefato de backup utiliza:
 
 - container versionado;
 - criptografia com `libsodium secretstream`;
-- chave obrigatoria via variavel de ambiente `ORBY_BACKUP_KEY`;
-- contrato de tabelas persistentes e efemeras;
-- validacao do schema antes de gerar ou restaurar;
-- restore em duas passagens: validacao do artefato e restauracao transacional;
-- protecao contra restaurar no banco da aplicacao por engano;
-- teste automatizado cobrindo corrupcao, chave errada, rollback e isolamento.
+- chave obrigatória via variável de ambiente `ORBY_BACKUP_KEY`;
+- contrato de tabelas persistentes e efêmeras;
+- validação do schema antes de gerar ou restaurar;
+- restore em duas passagens: validação do artefato e restauração transacional;
+- proteção contra restauração acidental no banco da aplicação;
+- teste automatizado cobrindo corrupção, chave errada, rollback e isolamento.
 
 Arquivos principais:
 
@@ -94,25 +175,47 @@ scripts/restore.php
 tests/cases/backup_recovery_test.php
 ```
 
+Variáveis de ambiente usadas pelo backup/restore:
+
+| Variável | Uso |
+|---|---|
+| `ORBY_BACKUP_KEY` | chave base64 de 32 bytes para criptografar/decriptar backups |
+| `ORBY_RESTORE_DB_HOST` | host do banco isolado de restauração |
+| `ORBY_RESTORE_DB_NAME` | nome do banco isolado de restauração |
+| `ORBY_RESTORE_DB_USER` | usuário do banco de restauração |
+| `ORBY_RESTORE_DB_PASS` | senha do banco de restauração |
+| `ORBY_RESTORE_CONFIRM_NAME` | confirmação exata do banco alvo |
+
+Gerar chave:
+
+```bash
+php -r "echo base64_encode(random_bytes(SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_KEYBYTES)), PHP_EOL;"
+```
+
 ---
 
-## Stack
+## Estrutura
 
-| Camada | Escolha |
-|---|---|
-| Front-end | HTML, CSS e JavaScript vanilla |
-| Graficos | Chart.js |
-| Back-end | PHP 8+ |
-| Banco | MySQL |
-| Auth | Sessao PHP, bcrypt, TOTP |
-| PWA | Manifest + Service Worker |
-| Deploy | GitHub Actions + FTPS |
-| Testes | PHP e JavaScript sem framework pesado |
-| Backup | PHP + libsodium |
+```text
+api/                       Endpoints da aplicação
+app/Core/                  Componentes centrais e serviços internos
+assets/                    CSS, JavaScript e imagens
+automation/                Arquivos auxiliares de automação
+config/                    Contratos de backup e schema
+docs/                      Documentação técnica e relatórios
+migrations/                Migrações de banco
+scripts/                   Scripts operacionais
+tests/                     Testes automatizados
+uploads/                   Arquivos enviados pelo usuário
 
-**Seguranca:** CSRF, rate limit, 2FA, isolamento por usuario, headers de protecao, `config.php` fora do versionamento e backup criptografado com chave fora do repositorio.
-
-**Operacao:** deploy automatizado, scripts de backup/restore, contratos de schema e testes automatizados no CI.
+auth.php                   Sessão, login, CSRF e 2FA
+db.php                     Conexão PDO
+finance.php                Regras do módulo financeiro
+index.php                  Aplicação principal
+plan.php                   Base de planos/assinatura
+schema.sql                 Schema inicial
+config.example.php         Exemplo de configuração local
+```
 
 ---
 
@@ -122,8 +225,10 @@ Requisitos:
 
 - PHP 8+
 - MySQL
-- extensoes PHP: `pdo_mysql`, `mbstring`, `json`
+- extensões PHP: `pdo_mysql`, `mbstring`, `json`
 - para backup criptografado: `sodium`
+
+Passos básicos:
 
 ```bash
 cp config.example.php config.php
@@ -134,36 +239,23 @@ Depois:
 
 1. Crie um banco MySQL.
 2. Rode o `schema.sql`.
-3. Ajuste as credenciais em `config.php`.
+3. Ajuste as credenciais no `config.php`.
 4. Acesse `http://localhost:8080`.
-
----
-
-## Variaveis de Backup
-
-O backup criptografado nao usa a senha do banco como chave. Gere uma chave propria:
-
-```bash
-php -r "echo base64_encode(random_bytes(SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_KEYBYTES)), PHP_EOL;"
-```
-
-| Variavel | Uso |
-|---|---|
-| `ORBY_BACKUP_KEY` | chave base64 de 32 bytes para criptografar/decriptar backups |
-| `ORBY_RESTORE_DB_HOST` | host do banco isolado de restauracao |
-| `ORBY_RESTORE_DB_NAME` | nome do banco isolado de restauracao |
-| `ORBY_RESTORE_DB_USER` | usuario do banco de restauracao |
-| `ORBY_RESTORE_DB_PASS` | senha do banco de restauracao |
-| `ORBY_RESTORE_CONFIRM_NAME` | confirmacao exata do banco alvo |
 
 ---
 
 ## Testes
 
-Rodar a suite PHP:
+Rodar a suíte PHP:
 
 ```bash
 php tests/run.php
+```
+
+Validar sintaxe de um arquivo PHP:
+
+```bash
+php -l arquivo.php
 ```
 
 O workflow `.github/workflows/tests.yml` valida PHP e JavaScript nos PRs.
@@ -172,44 +264,23 @@ O workflow `.github/workflows/tests.yml` valida PHP e JavaScript nos PRs.
 
 ## Deploy
 
-O deploy e feito por GitHub Actions via FTPS para hospedagem compartilhada.
+O deploy é feito por GitHub Actions via FTPS para hospedagem compartilhada.
 
 Secrets esperados:
 
 | Secret | Valor |
 |---|---|
 | `FTP_SERVER` | servidor FTP/FTPS |
-| `FTP_USERNAME` | usuario FTP |
+| `FTP_USERNAME` | usuário FTP |
 | `FTP_PASSWORD` | senha FTP |
-| `FTP_SERVER_DIR` | diretorio remoto, geralmente `/public_html/` |
+| `FTP_SERVER_DIR` | diretório remoto, geralmente `/public_html/` |
 
-Configuracao unica no servidor:
+Configuração única no servidor:
 
 1. Criar o banco e rodar `schema.sql`.
 2. Criar `config.php` a partir do `config.example.php`.
-3. Definir variaveis de ambiente de backup quando for usar `scripts/backup.php` ou `scripts/restore.php`.
-4. Ativar SSL da hospedagem.
-
----
-
-## Estrutura
-
-```text
-api/                     endpoints da aplicacao
-app/Core/                componentes centrais reutilizaveis
-assets/                  CSS, JS e imagens
-config/                  contratos de backup e schema
-docs/                    documentacao tecnica
-migrations/              migracoes de banco
-scripts/                 scripts operacionais
-tests/                   testes automatizados
-index.php                aplicacao principal
-auth.php                 sessao, CSRF, login e 2FA
-db.php                   conexao PDO
-finance.php              regras do modulo financeiro
-schema.sql               schema inicial
-config.example.php       exemplo de configuracao local
-```
+3. Ativar SSL da hospedagem.
+4. Definir variáveis de ambiente quando for usar backup/restore.
 
 ---
 
@@ -219,22 +290,28 @@ O backlog priorizado vive no [ROADMAP.md](ROADMAP.md).
 
 Frentes principais:
 
-- evoluir o financeiro como experiencia de banking app;
-- melhorar cobertura de testes;
-- fortalecer auditoria e seguranca;
+- evoluir o financeiro como experiência de banking app;
+- aumentar cobertura de testes;
+- fortalecer auditoria e trilha de eventos;
 - amadurecer modelo de assinatura;
-- modularizar cada vez mais a arquitetura;
-- melhorar operacao, backup e deploy.
+- modularizar a arquitetura gradualmente;
+- melhorar operação, backup e deploy;
+- preparar base para domínio próprio, e-mail transacional e recuperação de senha.
 
 ---
 
 ## Contribuindo
 
-Uma branch por melhoria, PR contra a `master` e testes antes do merge.
+Fluxo sugerido:
 
-Convencao de commits:
+1. Crie uma branch por melhoria.
+2. Abra PR contra `master`.
+3. Rode os testes antes do merge.
+4. Mantenha commits pequenos e objetivos.
 
-`feat:` nova funcionalidade · `fix:` correcao · `sec:` seguranca · `ci:` pipeline · `docs:` documentacao · `refactor:` reorganizacao.
+Convenção de commits:
+
+`feat:` nova funcionalidade · `fix:` correção · `sec:` segurança · `ci:` pipeline · `docs:` documentação · `refactor:` reorganização.
 
 ---
 
